@@ -16,9 +16,12 @@ from defrost_ai.models.weights import RETRIEVAL_INSTRUCTION, adapter_dir, device
 
 
 def _dtype(device) -> torch.dtype:
-    """bf16 on Apple GPU / CUDA (2x less memory traffic; Qwen overflows in fp16, so never fp16), fp32 on CPU.
-    DEFROST_RERANK_DTYPE=fp32|bf16 overrides."""
-    name = os.environ.get("DEFROST_RERANK_DTYPE") or ("bf16" if device.type in ("mps", "cuda") else "fp32")
+    """PyTorch path: bf16 on CUDA, fp32 elsewhere. On Apple Silicon the default backend is MLX (fp16); PyTorch on MPS
+    (models.backend = torch) is a debug / reference path and runs fp32 unless DEFROST_RERANK_DTYPE=bf16 asks for it.
+    Never fp16 with PyTorch: Qwen overflows in fp16 there."""
+    name = os.environ.get("DEFROST_RERANK_DTYPE", "auto")
+    if name in ("auto", "fp16"):
+        name = "bf16" if device.type == "cuda" else "fp32"
     return {"bf16": torch.bfloat16, "fp32": torch.float32}[name]
 
 
@@ -52,7 +55,8 @@ class DefrostReranker:
             self._merged = merged_dir(weights, adapter_dir(weights, "defrost-rerank"))
             # fp16: same speed as bf16 on the M5 GPU and ~8x closer to fp32 (10 vs 7 mantissa bits). Qwen can overflow
             # in fp16, so a query whose scores come back non-finite is recomputed in fp32 (see score()).
-            self.mlx = mlx_backend.MLXBackbone(self._merged, os.environ.get("DEFROST_RERANK_DTYPE", "fp16"))
+            dt = os.environ.get("DEFROST_RERANK_DTYPE", "auto")
+            self.mlx = mlx_backend.MLXBackbone(self._merged, "fp16" if dt == "auto" else dt)
             self._mlx32 = None
             self.mlx_head = mlx_backend.MLXScoreHead(state)
             self.model = None

@@ -119,8 +119,10 @@ class Memory:
                          "lines": [s["line_start"], s["line_end"]], "heading": s["heading_path"], "text": s["text"],
                          "rerank_score": None if scores is None else scores.get(sid), "cosine": cos.get(sid),
                          "code": code, "verify": verify, "stale": stale, "missing": missing, "doc_trust": level})
+        from defrost_ai.models import weights
         return {"query": query, "mode": asked, "mode_used": used, "k": k, "hits": hits,
-                "timing_ms": {"first_stage": round(1000 * (t1 - t0)), "rerank": round(1000 * (t2 - t1))}}
+                "timing_ms": {"first_stage": round(1000 * (t1 - t0)), "rerank": round(1000 * (t2 - t1))},
+                "weights_warning": weights.WARNING}
 
     def grounding(self, sid: str, doc_path: str, n: int = 4) -> tuple[list[str], list[dict]]:
         """Files to check an answer against: the config and code files this section links to (config first, at most
@@ -196,6 +198,8 @@ class Memory:
         """Cited context pack: one block per hit ('[n] path:Lx-y  heading' + text + linked code), ~4 chars/token."""
         from defrost_ai import trust
         parts, used = [], 0
+        if result.get("weights_warning"):                   # older weights on purpose: say so on every answer
+            parts.append(f"! {result['weights_warning']}\n")
         levels = {}
         for h in result["hits"]:
             levels.setdefault(h.get("doc_trust", trust.DEFAULT), []).append(h["domain"])

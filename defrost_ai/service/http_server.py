@@ -137,8 +137,18 @@ def warm_up(service: Service) -> None:
         print(f"warm-up skipped: {e}", flush=True)
 
 
+def _gc_merged():
+    """Drop merged-weights caches that the current weights no longer use (1.8 GB each); never fails the service."""
+    try:
+        from defrost_ai.models.merged_cache import gc_current
+        gc_current(log=lambda m: print(m, flush=True))
+    except Exception as e:                                          # noqa: BLE001
+        print(f"defrost: merged-cache cleanup skipped: {e}", flush=True)
+
+
 def serve(port: int = DEFAULT_PORT, host: str = "127.0.0.1"):
     service = Service()
+    threading.Thread(target=_gc_merged, daemon=True).start()
     if os.environ.get("DEFROST_WARMUP", "1") != "0":
         threading.Thread(target=warm_up, args=(service,), daemon=True).start()
     server = ThreadingHTTPServer((host, port), make_handler(service))

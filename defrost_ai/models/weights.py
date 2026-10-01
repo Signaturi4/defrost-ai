@@ -10,7 +10,8 @@ Layout of a weights directory (see models/MANIFEST.json):
 Every model is: Qwen2.5-0.5B (pinned revision) -> merge MNTP -> merge CGSA -> merge its own LoRA.
 Lookup order: $DEFROST_MODELS, <repo>/models, ~/.cache/defrost-ai/models. If none has them, or the cache holds an
 older release than WEIGHTS_VERSION, the release archive is downloaded into ~/.cache/defrost-ai/models and checked
-against a pinned sha256 (DEFROST_NO_DOWNLOAD=1 to disable)."""
+against a pinned sha256 (DEFROST_NO_DOWNLOAD=1 to disable). If that fails, loading fails loudly (WeightsError);
+older cached weights run only with models.allow_older_weights = true, and then every search result says so."""
 from __future__ import annotations
 
 import hashlib
@@ -51,27 +52,71 @@ def _version(d) -> str | None:
         return None
 
 
+class WeightsError(RuntimeError):
+    """The pinned weights are not available. Raised instead of silently running older weights."""
+
+
+WARNING: str | None = None          # set when older weights are used on purpose (models.allow_older_weights)
+
+
+def _allow_older() -> bool:
+    try:
+        from defrost_ai import settings
+        return bool(settings.get("models.allow_older_weights"))
+    except Exception:                                               # noqa: BLE001
+        return os.environ.get("DEFROST_ALLOW_OLDER_WEIGHTS", "").lower() in ("1", "true", "yes")
+
+
 def models_dir(download: bool = True) -> Path:
-    """$DEFROST_MODELS and <repo>/models are used as they are; the download cache must match WEIGHTS_VERSION,
-    so an upgrade replaces cached weights from an older release."""
+    """The weights directory to load. $DEFROST_MODELS and <repo>/models are used as they are (an explicit choice);
+    the download cache must hold WEIGHTS_VERSION. A missing or older cache is downloaded; if that fails, this
+    raises WeightsError naming the version and the fix, unless models.allow_older_weights is on, in which case the
+    older cache is used and every search result carries a warning line (WARNING).
+    download=False: no network; returns the cache whatever its version (for status / verification only)."""
+    global WARNING
     for c in (os.environ.get("DEFROST_MODELS"), Path(__file__).resolve().parents[2] / "models"):
         if _has_weights(c):
             return Path(c)
-    if _has_weights(CACHE / "models") and (_version(CACHE / "models") == WEIGHTS_VERSION or not download
-                                           or os.environ.get("DEFROST_NO_DOWNLOAD")):
+    cached = _has_weights(CACHE / "models")
+    if cached and (not download or _version(CACHE / "models") == WEIGHTS_VERSION):
         return CACHE / "models"
-    if download and not os.environ.get("DEFROST_NO_DOWNLOAD"):
+    if not download:
+        raise WeightsError(_missing_message("not downloaded"))
+    err = "downloads disabled (DEFROST_NO_DOWNLOAD)"
+    if not os.environ.get("DEFROST_NO_DOWNLOAD"):
         try:
             return download_weights()
         except Exception as e:                                      # noqa: BLE001  (offline, release missing, ...)
-            if _has_weights(CACHE / "models"):
-                import sys
-                print(f"defrost: could not fetch weights v{WEIGHTS_VERSION} ({e}); using cached "
-                      f"v{_version(CACHE / 'models')}", file=sys.stderr)
-                return CACHE / "models"
-            raise
-    raise FileNotFoundError("defrost weights not found. Run `defrost download-weights`, or set DEFROST_MODELS "
-                            "to a directory with MANIFEST.json.")
+            err = f"download failed: {e}"
+    if cached and _allow_older():
+        WARNING = (f"weights v{_version(CACHE / 'models')} in use, expected v{WEIGHTS_VERSION} "
+                   f"(models.allow_older_weights is on; {err})")
+        import sys
+        print(f"defrost: WARNING {WARNING}", file=sys.stderr)
+        return CACHE / "models"
+    have = f"cache has v{_version(CACHE / 'models')}" if cached else "nothing cached"
+    raise WeightsError(_missing_message(f"{err}; {have}"))
+
+
+def _missing_message(why: str) -> str:
+    return (f"defrost needs model weights v{WEIGHTS_VERSION} ({why}).\n"
+            f"  expected: {WEIGHTS_URL}\n"
+            f"  fix: run `defrost download-weights`, or set DEFROST_MODELS to a directory with MANIFEST.json "
+            f"(v{WEIGHTS_VERSION}).\n"
+            f"  to run older cached weights anyway: `defrost config models.allow_older_weights true` "
+            f"(every result will say so).")
+
+
+def status() -> dict:
+    """What `defrost status` shows: which weights would load, their version, and whether it is the pinned one."""
+    try:
+        d = models_dir(download=False)
+    except WeightsError:
+        return {"dir": None, "version": None, "expected": WEIGHTS_VERSION, "matches": False}
+    v = _version(d)
+    src = ("DEFROST_MODELS" if os.environ.get("DEFROST_MODELS") and Path(os.environ["DEFROST_MODELS"]) == d
+           else "cache" if d == CACHE / "models" else "repo")
+    return {"dir": str(d), "version": v, "expected": WEIGHTS_VERSION, "matches": v == WEIGHTS_VERSION, "source": src}
 
 
 def download_weights(url: str = WEIGHTS_URL, sha256: str = WEIGHTS_SHA256, log=print) -> Path:

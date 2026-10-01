@@ -4,7 +4,6 @@ Bidirectional attention is not a config switch: the model receives a 4D float ma
 attends to every other real token and padded keys are blocked (a 2D mask would silently keep causal attention)."""
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import shutil
@@ -12,9 +11,8 @@ from pathlib import Path
 
 import torch
 
-from defrost_ai.models.weights import BASE_MODEL, BASE_REVISION, CACHE
-
-MERGED_CACHE = CACHE / "merged"
+from defrost_ai.models.merged_cache import MERGED_CACHE, _chain_key, merged_name  # noqa: F401  (torch-free part)
+from defrost_ai.models.weights import BASE_MODEL, BASE_REVISION
 
 
 def merge_adapter(model, adapter_dir: Path):
@@ -29,26 +27,13 @@ def merge_adapter(model, adapter_dir: Path):
     return peft_model.merge_and_unload()
 
 
-def _chain_key(adapters) -> str:
-    """Identity of a merged model: base revision + the bytes of every adapter in the chain (sha256 from the weights
-    MANIFEST when listed there, else hashed here)."""
-    h = hashlib.sha256(BASE_REVISION.encode())
-    for adapter in adapters:
-        adapter = Path(adapter)
-        manifest = next((p / "MANIFEST.json" for p in adapter.parents if (p / "MANIFEST.json").exists()), None)
-        files = json.loads(manifest.read_text())["files"] if manifest else {}
-        for f in sorted(adapter.glob("adapter_*")):
-            rel = str(f.relative_to(manifest.parent)) if manifest else ""
-            h.update(f.name.encode())
-            h.update((files[rel]["sha256"] if rel in files else hashlib.sha256(f.read_bytes()).hexdigest()).encode())
-    return h.hexdigest()[:16]
-
-
 def merged_dir(weights: Path, own_adapter: Path) -> Path:
     """Directory of the merged model (config.json + model.safetensors, fp32): base -> MNTP -> CGSA -> own adapter.
-    Built once with peft and kept in ~/.cache/defrost-ai/merged/<name>-<key>; the MLX backend reads it too."""
+    Built once with peft and kept in ~/.cache/defrost-ai/merged/<name>-<key>; the MLX backend reads it too.
+    Kept in fp32 on purpose: an fp16 copy is bit-identical for the MLX fp16 path but shifts the fp32 PyTorch path
+    (CPU/CUDA reference, the MLX fp32 overflow retry) by up to 0.005 in score."""
     adapters = (weights / "base-adapters/mntp", weights / "base-adapters/cgsa", own_adapter)
-    cache = MERGED_CACHE / f"{Path(own_adapter).name}-{_chain_key(adapters)}"
+    cache = MERGED_CACHE / merged_name(weights, own_adapter)
     if not (cache / "config.json").exists():
         _merge(adapters).save_pretrained(tmp := cache.with_name(cache.name + f".tmp{os.getpid()}"),
                                          safe_serialization=True)
@@ -56,6 +41,7 @@ def merged_dir(weights: Path, own_adapter: Path) -> Path:
             shutil.rmtree(tmp, ignore_errors=True)
         else:
             os.replace(tmp, cache)
+    os.utime(cache)                                          # last use, for gc_merged()
     return cache
 
 

@@ -34,11 +34,14 @@ SETTINGS = [
     Setting("project.doc_trust", "low", ("low", "high"), "DEFROST_DOC_TRUST",
             "default for new projects. low: docs are hints, Claude checks the code. high: docs are reliable."),
     Setting("models.backend", "auto", ("auto", "mlx", "torch"), "DEFROST_BACKEND",
-            "auto: MLX on Apple Silicon, PyTorch elsewhere"),
+            "auto: MLX on Apple Silicon, PyTorch elsewhere. torch on a Mac is a debug/reference path (slower)."),
     Setting("models.rerank_dtype", "auto", ("auto", "fp16", "bf16", "fp32"), "DEFROST_RERANK_DTYPE",
-            "auto: fp16 on MLX, bf16 on GPU with PyTorch, fp32 on CPU"),
+            "auto: fp16 on MLX (fp32 retry on overflow), bf16 on CUDA, fp32 on CPU and on PyTorch-MPS"),
     Setting("models.rerank_cache", 20000, (), "DEFROST_RERANK_CACHE",
             "reranker scores kept in memory for repeated questions (0 = off)"),
+    Setting("models.allow_older_weights", False, (), "DEFROST_ALLOW_OLDER_WEIGHTS",
+            "run older cached weights when the pinned version cannot be downloaded (every result then says so). "
+            "Off: fail with a clear error instead."),
     Setting("service.port", 8765, (), "",
             "local port of the background search service"),
 ]
@@ -63,6 +66,8 @@ def _file() -> dict:
 
 
 def _coerce(s: Setting, value):
+    if isinstance(s.default, bool):
+        return value if isinstance(value, bool) else str(value).strip().lower() in ("1", "true", "yes", "on")
     if isinstance(s.default, int) and not isinstance(value, int):
         value = int(value)
     if s.choices and value not in s.choices:
@@ -93,7 +98,8 @@ def set_(key: str, value) -> None:
     if value is None:
         values.pop(key, None)
     else:
-        values[key] = _coerce(s, int(value) if isinstance(s.default, int) and str(value).isdigit() else value)
+        values[key] = _coerce(s, int(value) if isinstance(s.default, int) and not isinstance(s.default, bool)
+                              and str(value).isdigit() else value)
     _write(values)
 
 
@@ -109,7 +115,7 @@ def _write(values: dict) -> None:
         lines.append(f"# {s.help}" + (f" Choices: {', '.join(s.choices)}." if s.choices else ""))
         v = values.get(s.key)
         shown = s.default if v is None else v
-        text = f'"{shown}"' if isinstance(shown, str) else str(shown)
+        text = f'"{shown}"' if isinstance(shown, str) else str(shown).lower() if isinstance(shown, bool) else str(shown)
         lines.append(f"{'' if v is not None else '# '}{name} = {text}")
     p = path()
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -130,4 +136,4 @@ def export_env() -> None:
         if s.env and not os.environ.get(s.env):
             v = _file().get(s.key)
             if v is not None and v != "auto":
-                os.environ[s.env] = str(v)
+                os.environ[s.env] = str(v).lower() if isinstance(v, bool) else str(v)

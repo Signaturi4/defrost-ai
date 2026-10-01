@@ -23,6 +23,8 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 REF = ROOT / "results/private/latency/health_reference.json"
 MEMORY = Path("~/.defrost-ai/parity-heldout").expanduser()
+if not MEMORY.exists():                                            # home from before the rename
+    MEMORY = Path("~/.kev-memory/parity-heldout").expanduser()
 QUESTIONS = ROOT / "benchmarks/heldout/questions.jsonl"
 MODES = ("accurate", "fast", "rerank", "hybrid", "dense", "bm25", "all")
 
