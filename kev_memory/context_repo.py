@@ -4,7 +4,7 @@ Handoff notes and the user's doc/code conflict decisions live here, one file per
 so the history is auditable (`kev-memory context log`), can be shared through a remote, and is indexed as its own
 search domain `<domain>-context`. The layout follows Letta Code's memory filesystem ("memfs v2"):
 
-    ~/.kev-memory/<domain>.context/          git repo, branch main
+    <project>/defrost-memory/   git repo, branch main (after `kev-memory setup`; else ~/.kev-memory/<domain>.context/)
       MEMORY.md                 root map (no frontmatter): what is here and how to use it
       project.md                core file (root *.md): read on every brief; keep small
       notes/MEMORY.md           index of handoff notes (rebuilt from frontmatter)
@@ -50,8 +50,63 @@ def home() -> Path:
     return Path(os.environ.get("KEV_MEMORY_HOME", "~/.kev-memory")).expanduser()
 
 
+DEFAULT_DIRNAME = "defrost-memory"
+
+
+def _pointer(domain: str) -> Path:
+    return home() / f"{domain}.context.path"
+
+
 def repo_dir(domain: str) -> Path:
+    """The repo lives in the project (`place`) when a pointer file says so, else under ~/.kev-memory."""
+    f = _pointer(domain)
+    if f.exists() and f.read_text().strip():
+        return Path(f.read_text().strip()).expanduser()
     return home() / f"{domain}.context"
+
+
+def place(domain: str, project: str | Path | None, dirname: str = DEFAULT_DIRNAME) -> dict:
+    """Put the repo where the user can see it: `<project>/<dirname>/` (project=None: back to ~/.kev-memory).
+    An existing repo is moved, under its operation lock. The folder is a separate git repo, so it is hidden from the
+    project's git through .git/info/exclude (local, nothing tracked changes) and from the project's search domain."""
+    old = repo_dir(domain)
+    target = (Path(project).expanduser().resolve() / dirname) if project else home() / f"{domain}.context"
+    out = {"domain": domain, "path": str(target), "moved": False}
+    if old.resolve() != target.resolve():
+        if target.exists() and any(target.iterdir()):
+            raise ContextError(f"{target} exists and is not empty; pick another folder name")
+        if (old / ".git").exists():
+            with wt.operation_lock(old):
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if target.exists():
+                    target.rmdir()
+                shutil.move(str(old), str(target))
+            wt.git(target, "worktree", "prune", check=False)
+            install_hooks(target)
+            out["moved"] = str(old)
+    if project:
+        _pointer(domain).parent.mkdir(parents=True, exist_ok=True)
+        _pointer(domain).write_text(str(target) + "\n")
+        out["git_exclude"] = _exclude_from_project(Path(project).expanduser().resolve(), dirname)
+    else:
+        _pointer(domain).unlink(missing_ok=True)
+    if (home() / f"{context_domain(domain)}.workspace.json").exists() and exists(domain):
+        register(domain)                                     # the search domain follows the move
+    return out
+
+
+def _exclude_from_project(project: Path, dirname: str) -> str | None:
+    r = wt.git(project, "rev-parse", "--git-path", "info/exclude", check=False).strip()
+    if not r:
+        return None
+    f = Path(r) if Path(r).is_absolute() else project / r
+    f.parent.mkdir(parents=True, exist_ok=True)
+    line = f"/{dirname}/"
+    text = f.read_text() if f.exists() else ""
+    if line not in text.splitlines():
+        f.write_text(text + ("" if not text or text.endswith("\n") else "\n")
+                     + f"# defrost-ai working memory (its own git repo)\n{line}\n")
+    return str(f)
 
 
 def context_domain(domain: str) -> str:

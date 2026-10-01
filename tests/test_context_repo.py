@@ -218,3 +218,21 @@ def test_memory_files_follow_the_writing_rules_except_frontmatter_type(home):
     for f in (note, cr.repo_dir("crm") / dec["file"]):
         errors = [i for i in lint.lint(f) if i[0] == "ERROR" and "frontmatter type" not in i[2]]
         assert errors == [], (f, errors)
+
+
+def test_place_moves_the_repo_into_the_project_and_hides_it_from_project_git(home, tmp_path):
+    from kev_memory import context_repo as cr, notes
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    git(proj, "init", "-q")
+    notes.write_handoff("p", "goal before the move", "", [], [], [])          # created under the home
+    assert cr.repo_dir("p") == home / "p.context"
+    res = cr.place("p", proj)
+    assert res["moved"] and cr.repo_dir("p") == proj / "defrost-memory" and not (home / "p.context").exists()
+    assert "goal before the move" in notes.latest("p").read_text()
+    assert "/defrost-memory/" in (proj / ".git/info/exclude").read_text()
+    assert git(proj, "status", "--porcelain").stdout == ""                    # the project's git does not see it
+    notes.write_handoff("p", "goal after the move", "", [], [], [])
+    assert cr.check("p") == [] and len(cr.log("p")) >= 3
+    cr.place("p", None)                                                       # back to the home
+    assert cr.repo_dir("p") == home / "p.context" and (home / "p.context/.git").exists()

@@ -64,6 +64,10 @@ def main(argv=None):
                     help="fast-forward the docs-auto branch into the checkout (default: keep defrost/docs/<sha> for review)")
     st.add_argument("--handoff-on-compact", action="store_true",
                     help="Claude Code PreCompact hook: write an extractive handoff note (no model calls); implies --handoff")
+    st.add_argument("--memory-dir", default="defrost-memory",
+                    help="folder in the project for the context repository (default defrost-memory)")
+    st.add_argument("--memory-home", action="store_true",
+                    help="keep the context repository in ~/.kev-memory instead of the project folder")
     st.add_argument("--remove-triggers", action="store_true")
     st.add_argument("--doc-trust", choices=["high", "low"],
                     help="high: docs are reliable, answer from them; low (default): docs are hints, always check code")
@@ -100,8 +104,11 @@ def main(argv=None):
     da.add_argument("--merge", action="store_true", help="fast-forward the branch into the checkout when clean")
     sub.add_parser("compact-handoff", help="Claude Code PreCompact hook handler (reads the hook JSON on stdin)")
     cx = sub.add_parser("context", help="the project's context repository (git-backed working memory)")
-    cx.add_argument("action", choices=["init", "check", "log", "defrag", "branches", "merge", "remote", "brief"])
-    cx.add_argument("arg", nargs="?", help="merge: branch name; remote: URL ('none' to remove)")
+    cx.add_argument("action", choices=["init", "check", "log", "defrag", "branches", "merge", "remote", "brief",
+                                             "where", "place"])
+    cx.add_argument("arg", nargs="?", help="merge: branch name; remote: URL ('none' to remove); "
+                                           "place: project path ('home' moves it back to ~/.kev-memory)")
+    cx.add_argument("--dir", default="defrost-memory", help="place: folder name inside the project")
     cx.add_argument("--domain"); cx.add_argument("-n", type=int, default=20)
     cx.add_argument("--keep-notes", type=int, default=20, help="defrag: handoff notes kept outside notes/archive")
     cx.add_argument("--review", action="store_true", help="defrag: keep the result on a branch instead of merging")
@@ -165,7 +172,7 @@ def main(argv=None):
         res = setup(a.path, a.domain, a.build, a.on_main_merge, a.every_hours, a.claude_hook, a.doc_rules, a.claude,
                     a.remove_triggers, doc_trust=a.doc_trust, handoff=a.handoff or a.handoff_on_compact,
                     handoff_on_compact=a.handoff_on_compact, docs_auto_merge=a.docs_auto_merge,
-                    docs_sync=a.docs_sync or a.docs_auto, docs_auto=a.docs_auto, docs_budget=a.docs_budget)
+                    memory_dir=None if a.memory_home else a.memory_dir, docs_sync=a.docs_sync or a.docs_auto, docs_auto=a.docs_auto, docs_budget=a.docs_budget)
         print(json.dumps(res, indent=1, default=str))
     elif a.cmd == "refresh":
         from kev_memory.project_setup import refresh
@@ -283,6 +290,11 @@ def main(argv=None):
             res = worktree.merge_branch(Path(a.repo).resolve() if a.repo else cr.repo_dir(name), a.arg)
             print(json.dumps(res, indent=1))
             return 0 if res["status"] == "merged" else 1
+        elif a.action == "where":
+            print(cr.repo_dir(name))
+        elif a.action == "place":
+            target = None if a.arg == "home" else Path(a.arg or ".").resolve()
+            print(json.dumps(cr.place(name, target, a.dir), indent=1))
         elif a.action == "remote":
             url = None if (a.arg or "none") == "none" else a.arg
             print(json.dumps(cr.set_remote(name, url), indent=1))

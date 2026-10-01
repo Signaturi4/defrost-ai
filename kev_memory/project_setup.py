@@ -286,8 +286,10 @@ def remove_memory_rule(root: Path) -> None:
 # ---- setup ----------------------------------------------------------------------------------------------------------
 def setup(path=".", domain=None, build="now", on_main_merge=False, every_hours=None, claude_hook=False,
           doc_rules=False, claude=False, remove=False, log=print, doc_trust=None, handoff=False, docs_sync=False,
-          docs_auto=False, docs_budget=0.5, handoff_on_compact=False, docs_auto_merge=False) -> dict:
-    """doc_trust: "high" | "low" | None (keep the stored level; "low" for a new domain). See kev_memory/trust.py."""
+          docs_auto=False, docs_budget=0.5, handoff_on_compact=False, docs_auto_merge=False,
+          memory_dir="defrost-memory") -> dict:
+    """doc_trust: "high" | "low" | None (keep the stored level; "low" for a new domain). See kev_memory/trust.py.
+    memory_dir: folder in the project for the context repository (None keeps it in ~/.kev-memory)."""
     root = Path(path).expanduser().resolve()
     name = domain or root.name.lower().replace(" ", "-")
     out = {"domain": name, "path": str(root)}
@@ -301,6 +303,14 @@ def setup(path=".", domain=None, build="now", on_main_merge=False, every_hours=N
         log(f"[{name}] triggers removed")
         return out | {"removed": True}
     ws = workspace_for(root, name)
+    from kev_memory import context_repo
+    if memory_dir:
+        spec = json.loads(ws.read_text())
+        for comp in spec["components"]:
+            if Path(comp["path"]).expanduser().resolve() == root and memory_dir not in comp.setdefault("exclude", []):
+                comp["exclude"].append(memory_dir)               # indexed as <name>-context, not twice
+        ws.write_text(json.dumps(spec, indent=1))
+    out["context_repo"] = context_repo.place(name, root if memory_dir else None, memory_dir or "defrost-memory")
     from kev_memory import trust
     if doc_trust:
         trust.write(ws, doc_trust)
