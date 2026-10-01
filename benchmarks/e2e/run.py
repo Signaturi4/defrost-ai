@@ -3,7 +3,7 @@
 Systems (each gets the same ~2000-token context budget, except defrost+graph which is the two concatenated):
   graphify-ast    stock graphify 0.4.32, AST graph (free tier), MCP query_graph logic (BFS depth 3)
   graphify-full   stock graphify 0.4.32 after the /graphify skill (Claude semantic tier over docs + code)
-  defrost             graphify fork + defrost: memory_search mode=fast, k=5 (doc sections + linked code)
+  defrost             graphify fork + defrost: memory_search mode=fast (1.1 name of today's accurate), k=5 (doc sections + linked code)
   defrost+graph       defrost context followed by the graphify-ast context (what an agent with the fork's MCP sees)
 graphify is queried on the question's own repo graph (oracle routing, in its favour); defrost searches all three repos.
 
@@ -75,7 +75,7 @@ def main():
         for kind in ("graphify-ast", "graphify-full"):
             if (kind, q["component"]) in graphs:
                 ctx[kind] = graph_ctx(graphs[(kind, q["component"])], q["question"])
-        res = lib.search(q["question"], ["e2e"], mode="fast", k=5)
+        res = lib.search(q["question"], ["e2e"], mode="accurate", k=5)
         ctx["defrost"] = Memory.context(res, BUDGET)
         ctx["defrost+graph"] = ctx["defrost"] + "\n\n## code graph\n" + ctx["graphify-ast"]
         sec_hit = any(h["section_id"] == q["gold_doc"]["section_id"] for h in res["hits"])

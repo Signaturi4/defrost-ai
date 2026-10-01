@@ -152,14 +152,15 @@ header.
   set, pushes to the team remote.
 - **Migration:** the old notes folder and the `conflicts.jsonl` log are migrated on the first write.
 
-**Commands.**
+**Commands.** Day to day you only need `defrost note` (write, `--brief`, `--history`) and the MCP tool
+`remember`. The commands below are for maintenance; they work but are not listed in `defrost --help`.
 
 | command | what it does |
 |---|---|
 | `defrost context init` | creates the repo and registers `<domain>-context` |
 | `defrost context where`, `context place [PATH\|home] [--dir NAME]` | shows or moves the repo |
 | `defrost context check` | runs the hook's validation on the working tree |
-| `defrost context log` | the audit trail, also the MCP tool `memory_context_log` |
+| `defrost context log` | the audit trail (also `defrost note --history`) |
 | `defrost context brief` | the root map plus core files, within a word budget |
 | `defrost context defrag` | archives old notes, splits oversize files and rebuilds indexes, as a worktree job that fast-forwards `main` |
 | `defrost context branches [--repo .]`, `context merge <branch>` | review and merge job branches |

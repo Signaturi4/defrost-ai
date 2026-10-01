@@ -33,6 +33,7 @@
 
 <p align="center">
   <a href="#quick-start">Quick start</a> ·
+  <a href="#search-modes">Search modes</a> ·
   <a href="#use-with-claude-mcp-server--slash-commands">Claude</a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="#results">Results</a> ·
@@ -47,8 +48,8 @@ together with the code each section names. Agents use it through MCP or the CLI.
 there is no per-query API cost.
 
 ```sh
-$ defrost search "how do I bind values to a structlog logger so they show up in every message?" -k auto
-mode fast -> rerank
+$ defrost search "how do I bind values to a structlog logger so they show up in every message?"
+3 sections (accurate: reranked, the retrievers disagreed)
 
 [1] e2e:structlog/docs/processors.md:L39-90  processors.md > Processors > Chains > Examples
 ### Examples If you set up your logger like: structlog.configure(processors=[f1, f2, f3])
@@ -62,8 +63,10 @@ log = structlog.get_logger().bind(x=42) and call log.info("some_event", y=23), i
 | **Stays fresh by itself** | Refreshes on merge to main or on a schedule, and re-embeds only what changed |
 
 > [!NOTE]
-> Coming from `kev-memory`? The old command, the `KEV_MEMORY_*` variables and `~/.kev-memory` keep working until
-> 1.3. Run the install line again to switch to `defrost-ai`.
+> Coming from `kev-memory` or defrost-ai 1.1? Old commands, MCP tool names, `KEV_MEMORY_*` variables and installed
+> hooks keep working; they are just no longer listed. Run `defrost setup` again to switch a repository to the new hooks.
+> One change in meaning: the mode 1.1 called `fast` (rerank on disagreement) is now `accurate`, the default; `fast`
+> now means no reranker.
 
 ## Quick start
 
@@ -73,103 +76,156 @@ One command installs the CLI, downloads the weights and registers the Claude Cod
 curl -fsSL https://raw.githubusercontent.com/Signaturi4/defrost-ai/main/install.sh | sh
 ```
 
-It needs [uv](https://docs.astral.sh/uv/). It installs `defrost-ai` (the `defrost` command) as a uv tool (Python 3.12), fetches the
-adapters (about 140 MB, checked by sha256) to `~/.cache/defrost-ai`, and runs `defrost claude install --user`.
+It needs [uv](https://docs.astral.sh/uv/). It installs `defrost-ai` (the `defrost` command) as a uv tool (Python 3.12),
+fetches the adapters (about 140 MB, checked by sha256) to `~/.cache/defrost-ai`, and registers the MCP server and
+slash commands with Claude Code.
 
-Then open Claude Code in any repository and type:
-
-```
-/defrost-setup
-```
-
-Claude asks how the memory should stay fresh and builds it. The default is the recommended one: **build now, then
-refresh on every merge or commit to main that changes a doc or code file**. You never run a build by hand.
-
-| refresh option | what it installs | when it runs |
-|---|---|---|
-| Build now + on every merge/commit to main (Recommended) | `post-merge` + `post-commit` git hooks (marked block, your own hooks are kept) | after a merge or commit on `main`/`master`, only if an indexed file changed |
-| Every few hours (2 / 6 / 24 h) | a launchd agent on macOS, a crontab line on Linux | on the schedule, only if something changed |
-| When a Claude session starts | a `SessionStart` hook in `.claude/settings.json` | at session start, in the background, only if stale |
-| Only when I run `/memory-update` | nothing | on demand |
-
-Every trigger runs `defrost refresh <domain> --if-changed` in the background, so commits and sessions do
-not wait. Refreshes are incremental (only new or edited sections are re-embedded) and log to
-`~/.defrost-ai/<domain>.refresh.log`. The search index lives in `~/.defrost-ai/<domain>`, never in your repo. The
-only folder setup adds to your project is `defrost-memory/`, the working memory described below.
-Indexing follows `.gitignore`, so ignored folders (archives, data dumps, `node_modules`) stay out.
-Setup also adds a short "Project memory" block to `CLAUDE.md` that tells Claude to call `memory_search` for
-how/why questions. Without it, agents in our evals mostly ignored the MCP tools.
-
-**Doc trust.** `/defrost-setup` asks how far Claude should trust your docs; `--doc-trust` sets it:
-
-| setting | for | what Claude does with a hit |
-|---|---|---|
-| `low` (default; "code is the truth") | startups, code that changes daily, few docs | treats the section as a hint, reads the `verify in:` files, answers from the code and lists doc/code conflicts |
-| `high` ("docs are reliable") | legacy or well-documented projects | answers from the section; reads code only when a hit carries a `!` stale or conflict line |
-
-The setting lives in `~/.defrost-ai/<domain>.workspace.json` (`"doc_trust"`). Every search result starts with
-a line that states it, and the `CLAUDE.md` block says the same. Re-run `defrost setup . --doc-trust high
---build skip` to change it; no rebuild is needed. The default is `low` because a wrong answer copied from a stale
-doc is silent, while grounding costs a few file reads.
-
-The same setup without Claude:
+Then open Claude Code in any repository and type `/defrost-setup`, or run it in a terminal:
 
 ```sh
-defrost setup . --build now --on-main-merge          # + --doc-trust high|low, --every-hours 6, --claude-hook, --doc-rules
-defrost status                                       # per domain: built_at, counts, stale (and why), triggers
-defrost refresh my-repo --if-changed                 # what the triggers run
-defrost setup . --remove-triggers                    # remove hooks, schedule and session hook
+defrost setup          # asks 3 questions; press Enter for the recommended answer
+defrost setup --yes    # no questions, recommended answers
 ```
 
-Upgrade: run the install line again (it reinstalls; the resident service restarts itself on the new build).
+The three questions:
+
+1. **How much should defrost do?** (`--profile`)
+
+   | profile | what you get |
+   |---|---|
+   | `minimal` | the index refreshes after every merge or commit to main. Nothing else. |
+   | `standard` (recommended) | minimal + doc-writing rules in `CLAUDE.md` + a handoff note shown after `/clear` + a reminder at session start of commits whose docs need an update |
+   | `full` | standard + Claude is asked to update docs before it finishes and before it commits + a handoff note is written automatically before compaction |
+
+2. **Default search mode?** (`--mode`) See [Search modes](#search-modes). Default `accurate`.
+
+3. **How far should Claude trust your docs?** (`--doc-trust`)
+
+   | setting | for | what Claude does with a hit |
+   |---|---|---|
+   | `low` (default, "code is the truth") | code that changes daily, few docs | treats the section as a hint, reads the `verify in:` files, answers from the code and lists doc/code conflicts |
+   | `high` ("docs are reliable") | legacy or well-documented projects | answers from the section; reads code only when a hit carries a `!` stale or conflict line |
+
+You never run a build by hand. Refreshes run in the background, are incremental (only new or edited sections are
+re-embedded) and log to `~/.defrost-ai/<domain>.refresh.log`. The search index lives in `~/.defrost-ai/<domain>`,
+never in your repo. The only folder setup adds to your project is `defrost-memory/` (handoff notes and decisions,
+see below). Indexing follows `.gitignore`, and secret-like files (`.env`, `*secret*`, keys) are never indexed.
+Setup also adds a short "Project memory" block to `CLAUDE.md` that tells Claude to use the memory; without it, agents
+in our evals mostly ignored the MCP tools.
+
+Want something between the profiles? Each option overrides its profile:
+
+```sh
+defrost setup --profile minimal --every-hours 6     # also refresh on a schedule (launchd / cron)
+defrost setup --claude-hook                          # also refresh when a Claude session starts
+defrost setup --no-doc-rules                         # keep CLAUDE.md free of the doc-writing rules
+defrost setup --help                                 # every option
+defrost setup --remove                               # remove every hook and schedule defrost installed
+```
+
+Upgrade: run the install line again (the resident service restarts itself on the new build).
+
+## Search modes
+
+There are two. Pick per question, or set your default once.
+
+| mode | speed | quality (locked test, nDCG@10) | how |
+|---|---|---|---|
+| **`accurate`** (default) | ~1-2 s when it reranks, ~0.1 s when it does not | **0.838** | keyword (BM25) and meaning (Defrost-Ret-B) search run together. When their top hits agree, that answer is returned at once. When they disagree, the Defrost-Rerank model reads both top-20 lists and picks. |
+| **`fast`** | ~0.1 s | 0.776 | the same two searches, merged by rank. No reranker. |
+
+Use `accurate` when the answer matters (an agent about to change code). Use `fast` for interactive lookups,
+autocomplete or chatbots where 0.1 s matters more than the last few points. Times are for Apple Silicon (MLX).
+
+```sh
+defrost search "how is a refund issued?"            # your default mode
+defrost search "how is a refund issued?" --fast     # this question only
+defrost config search.mode fast                     # change your default
+```
+
+Researchers can still ask for one retriever with `--mode bm25|dense|hybrid|rerank|all`.
+
+## Commands
+
+| command | what it does |
+|---|---|
+| `defrost setup` | set up this repository (3 questions) |
+| `defrost search "question"` | the doc sections that answer it, with the code they name (`--fast`, `-k 3`, `--json`) |
+| `defrost status` | what is indexed, how fresh it is, which settings are active |
+| `defrost refresh` | update the index now (`--rollback` restores the previous build) |
+| `defrost docs [FILES]` | which doc sections to update for your change (`--staged`, `--commit SHA`, `--pending`) |
+| `defrost note "goal"` | save a handoff note (`--state`, `--next`, `--why`); `--brief` shows the latest, `--history` all |
+| `defrost config [KEY [VALUE]]` | show or change personal settings |
+| `defrost mcp`, `defrost serve` | the MCP server and the local HTTP service (started for you) |
+
+### Settings
+
+Personal settings live in one commented file, `~/.defrost-ai/config.toml`. `defrost config` shows every setting,
+its value and where the value comes from; an environment variable, if set, wins over the file.
+
+```sh
+$ defrost config
+  search.mode            accurate   (default)
+  search.k               auto       (default)
+  project.doc_trust      low        (default)
+  models.backend         auto       (default)
+  ...
+$ defrost config search.k 3
+$ defrost config search.k --reset
+```
+
+| setting | values | env override |
+|---|---|---|
+| `search.mode` | `accurate` (default), `fast` | `DEFROST_SEARCH_MODE` |
+| `search.k` | `auto` (1-5, fewer when the top hit is clearly right) or a number | `DEFROST_SEARCH_K` |
+| `project.doc_trust` | default for new projects: `low`, `high` | `DEFROST_DOC_TRUST` |
+| `models.backend` | `auto` (MLX on Apple Silicon), `mlx`, `torch` | `DEFROST_BACKEND` |
+| `models.rerank_dtype` | `auto`, `fp16`, `bf16`, `fp32` | `DEFROST_RERANK_DTYPE` |
+| `models.rerank_cache` | reranker scores kept for repeated questions (`0` = off) | `DEFROST_RERANK_CACHE` |
+| `service.port` | port of the local search service (8765) | `DEFROST_URL` |
+
+Per-project doc trust lives in `~/.defrost-ai/<domain>.workspace.json`; change it with
+`defrost setup --doc-trust high --build skip` (no rebuild needed).
 
 ## Use with Claude (MCP server + slash commands)
 
-`install.sh` already did this for all projects. To do it for one project only (commands in `.claude/commands`,
-server in `.mcp.json`, so the team gets it from git):
-
-```sh
-defrost claude install .
-```
-
-Or register the server alone, in any MCP client (Claude Code, Claude Desktop, Cursor):
+`install.sh` already did this for all projects. To register the server in another MCP client (Claude Desktop,
+Cursor):
 
 ```sh
 claude mcp add defrost -- defrost mcp
 ```
 
+Four MCP tools:
+
+| tool | what it does |
+|---|---|
+| `search(question, mode, k, domains)` | doc sections with `path:Lstart-end`, the linked code, and stale/conflict warnings. Default: this project and its notes. |
+| `docs_for(files, change)` | the doc sections that describe the changed files, so docs are updated in the same change |
+| `remember(kind="note" \| "decision", ...)` | save a handoff note, or your decision on a doc/code conflict |
+| `refresh(path, status_only)` | update or build an index; `status_only=true` reports freshness |
+
+Slash commands:
+
 | in Claude | what it does |
 |---|---|
-| `/defrost-setup` | asks how to keep the memory fresh, installs those triggers, builds the memory |
-| `/memory-search <question>` | searches, then answers from the returned sections with `path:Lstart-end` citations and the linked code |
-| `/memory-update [domain]` | incremental refresh now |
-| `/memory-init [name]` | builds a memory for a repo or docs folder, no triggers |
-| `/memory-domains` | lists the memories with counts and build times |
+| `/defrost-setup` | the 3 setup questions, then setup |
+| `/ask <question>` | searches, then answers with `path:Lstart-end` citations, checked against the linked code |
+| `/handoff` | saves a handoff note before `/clear` |
+| `/document-changes` | updates the docs that describe your change |
 
-MCP tools: `memory_search` (modes `fast`, `rerank`, `dense`, `bm25`, …; `k` = number or `"auto"`),
-`memory_domains`, `memory_init`, `memory_update`, `memory_job`, `memory_rollback`. The server is a thin stdio
-process with no ML dependencies. Searches go to one resident local service (`defrost serve`, started on first
-use), so the models load once for all clients. Set `DEFROST_DOMAINS=my-repo` to restrict searches by default.
+The MCP server is a thin stdio process with no ML dependencies. Searches go to one resident local service
+(`defrost serve`, started on first use), so the models load once for all clients.
 
 ### Working memory: a git-backed context repository
 
-Handoff notes (`/handoff`, `memory_handoff`) and your doc/code conflict decisions are stored as small Markdown
-files in `defrost-memory/` inside your project, so you can open and read them next to your code. The folder is its
-own git repo: your project's git does not see it (setup adds it to `.git/info/exclude`, nothing tracked changes),
-and the project's index skips it. Every write is one commit, so you can audit
-what the agent remembered and why (`defrost context log`), share it with your team through a remote
-(`defrost context remote <url>`), and search it as the domain `<domain>-context`. The layout and the
-pre-commit validation follow Letta Code's context repositories. `--handoff-on-compact` saves a note before each
-compaction with no model calls, and `defrost context defrag` archives old notes in a worktree job.
-
-```sh
-defrost context where                  # path of the working memory for this project
-defrost context place . --dir notes-ai # move it to another folder in the project
-defrost context place home             # move it to ~/.defrost-ai/<domain>.context (setup: --memory-home)
-```
-
-Details:
-[docs/LETTA_CONTEXT_REPOS.md](docs/LETTA_CONTEXT_REPOS.md).
+Handoff notes (`/handoff`, `remember(kind="note")`, `defrost note`) and your doc/code conflict decisions are stored
+as small Markdown files in `defrost-memory/` inside your project, so you can read them next to your code. The
+folder is its own git repo: your project's git does not see it (setup adds it to `.git/info/exclude`), and the
+project's index skips it. Every write is one commit, so you can audit what the agent remembered and why
+(`defrost note --history`). Search covers it as the domain `<domain>-context`, and `defrost status` shows it under
+its project. The layout and the pre-commit validation follow Letta Code's context repositories.
+Setup options `--memory-dir DIR` and `--memory-home` move it. Details: [docs/LETTA_CONTEXT_REPOS.md](docs/LETTA_CONTEXT_REPOS.md).
 
 ### With graphify
 
@@ -187,12 +243,11 @@ Python:
 
 ```python
 from defrost_ai import Library
-res = Library().search("how does the feed reach mobile", mode="fast", k="auto")
+res = Library().search("how does the feed reach mobile")             # accurate
+res = Library().search("how does the feed reach mobile", mode="fast")
 for hit in res["hits"]:
     print(hit["domain"], hit["path"], hit["lines"], hit["heading"], [c["label"] for c in hit["code"]])
 ```
-
-Modes: `fast` (default), `rerank` (most accurate, slowest), `dense`, `bm25` (exact strings), `hybrid`, `all`.
 
 **Grounded in the code, not just the docs.** Docs go stale, so every hit carries the files to check it against:
 
@@ -206,18 +261,18 @@ Modes: `fast` (default), `rerank` (most accurate, slowest), `dense`, `bm25` (exa
 ```
 
 - **What gets linked:** config, CI and infra files (compose files, Dockerfiles, workflows, crontabs, shell scripts),
-  as well as code symbols. Secret-like files (`.env`, `*secret*`, keys) are never indexed.
+  as well as code symbols.
 - **Stale docs:** a hit is flagged when a file it names was committed after the doc was.
 - **Conflicts:** a hit is flagged when the doc names a file or function that no longer exists. The agent does not
   pick a side: it shows the doc and the code and asks you ("code is right", "doc is right", "not a conflict", "not
-  sure"). Your answer is recorded (`memory_resolve_conflict`, `defrost conflicts <domain>`) and shown on later
-  hits as a `resolved:` line, so each conflict is asked once.
+  sure"). Your answer is recorded (`remember(kind="decision")`, `defrost note --conflict DOC --verdict code`) and
+  shown on later hits as a `resolved:` line, so each conflict is asked once.
 - **Claude's instructions:** the CLAUDE.md block tells Claude to read the `verify in:` files before stating how
   something behaves, to trust the code when the two disagree, and to list the doc/code conflicts it found.
-- **Docs to update:** after a change, `memory_docs_for` (MCP) or `defrost docs-for <file>` lists the doc sections
-  that describe the changed files, so they are updated in the same change.
+- **Docs to update:** after a change, `docs_for` (MCP) or `defrost docs` lists the doc sections that describe the
+  changed files.
 
-FAQ / support chatbots: see [docs/FAQ_CHATBOT.md](docs/FAQ_CHATBOT.md) (use `hybrid` for real-time, about 45 ms).
+FAQ / support chatbots: see [docs/FAQ_CHATBOT.md](docs/FAQ_CHATBOT.md) (use `fast`, or `--mode hybrid` directly).
 
 ## How it works
 
@@ -231,7 +286,7 @@ your project. Mermaid sources and the rules behind each step: [docs/AGENT_LOOP.m
 </p>
 
 <p align="center">
-  <a href="docs/img/agent_loop-2.svg"><img src="docs/img/agent_loop-2.svg" width="78%" alt="The loop: brief after /clear, pick memory_search, graphify or grep by question kind, verify hits against code according to doc trust, ask the user on a doc/code conflict and record the decision, update docs after code changes, hand off before /clear or compaction"></a>
+  <a href="docs/img/agent_loop-2.svg"><img src="docs/img/agent_loop-2.svg" width="78%" alt="The loop: brief after /clear, pick defrost search, graphify or grep by question kind, verify hits against code according to doc trust, ask the user on a doc/code conflict and record the decision, update docs after code changes, hand off before /clear or compaction"></a>
   <br><sub>The loop, step by step</sub>
 </p>
 
@@ -257,10 +312,10 @@ Full protocol: [docs/EVALUATION.md](docs/EVALUATION.md). Everything that worked 
 
 | | held-out repos (106) | private product repos (69) |
 |---|---|---|
-| nDCG@10, BM25 → `fast` | 0.703 → **0.840** | 0.684 → **0.835** |
-| RAGAS nv_mean (both), BM25 → `fast` (Defrost-Rerank v1) | 0.791 → **0.879** | |
+| nDCG@10, BM25 → `accurate` | 0.703 → **0.840** | 0.684 → **0.835** |
+| RAGAS nv_mean (both), BM25 → `accurate` (Defrost-Rerank v1) | 0.791 → **0.879** | |
 
-Defrost-Rerank v2 (default since weights v1.1.0) against v1 on the same locked test, paired: `fast` +0.024
+Defrost-Rerank v2 (default since weights v1.1.0) against v1 on the same locked test, paired: `accurate` +0.024
 [+0.010, +0.041], `rerank` +0.037 [+0.019, +0.056]. The RAGAS row and the graphify comparison below were run with
 v1; they were not re-run.
 
@@ -290,7 +345,7 @@ multi-hop questions are unsolved.
 
 ## Use cases
 
-- **Coding agents (Claude Code, Codex, Cursor…):** `memory_search` as an MCP tool next to graphify's graph tools.
+- **Coding agents (Claude Code, Codex, Cursor…):** `search` as an MCP tool next to graphify's graph tools.
   The agent gets the doc section and the code it names in one call.
 - **RAG over internal docs:** handbooks, runbooks, ADRs, READMEs across many repos, with citations to path and lines.
 - **Company knowledge base, several domains at once:** register each repo or folder as a domain; one query searches
@@ -313,7 +368,7 @@ multi-hop questions are unsolved.
 | **Defrost-Ret-B** (ours) | LoRA r16 on the backbone, contrastive training on 57k (query, passage, hard negative) rows: MS MARCO, NQ, HotpotQA, AllNLI, Quora, StackExchange + 9.7k tech-doc questions | dense retrieval of doc sections |
 | **Defrost-Rerank v2** (ours) | same backbone + LoRA + score head, listwise loss over 1 positive + 7 negatives (BM25, same-file siblings, changelog sections) | reordering the top 40 candidates |
 | **SQLite FTS5 BM25** | SQLite | keyword retrieval: exact identifiers, flags, error strings |
-| **`fast` policy** (ours) | no parameters | uses the cheap fusion when BM25 and the dense retriever agree on the top section, the reranker when they disagree (about half the queries) |
+| **`accurate` policy** (ours) | no parameters | uses the cheap fusion when BM25 and the dense retriever agree on the top section, the reranker when they disagree (about half the queries) |
 | **adaptive k** (ours, optional `k="auto"`) | temperature-scaled dense confidence | sends 1–5 sections: 18% fewer context tokens at the same hit rate |
 | **graphify 0.4.32** | safishamsi/graphify, MIT | tree-sitter AST code graph, git hooks, MCP server, CLI. We add a patch (`integrations/graphify/`): `graphify memory …`, three MCP tools, the hook call, and a CLAUDE.md rule |
 | **Shepherd** (`shepherd-ai`) | shepherd-agents | sandboxed agent tasks with retained, reviewable outputs |
@@ -379,8 +434,8 @@ defrost build benchmarks/heldout/workspace.json
 defrost benchmark --suite benchmarks/heldout/questions.jsonl --memory ~/.defrost-ai/benchmark-heldout --split dev
 ```
 
-Expected on held-out dev (nDCG@10): bm25 0.711, dense 0.885, hybrid 0.789, rerank 0.890, fast 0.887
-(weights v1.1.0; with v1.0.0: rerank 0.870, fast 0.870).
+Expected on held-out dev (nDCG@10): bm25 0.711, dense 0.885, hybrid 0.789, rerank 0.890, accurate 0.887
+(weights v1.1.0; with v1.0.0: rerank 0.870, accurate 0.870).
 
 ## License
 

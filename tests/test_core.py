@@ -40,12 +40,12 @@ def test_doc_to_code_link_is_exact_and_unique():
 
 def test_fast_policy_uses_hybrid_on_agreement_else_rerank():
     bm, de = ["a", "b", "c"], ["a", "c", "d"]
-    assert not policy.needs_reranker("fast", bm, de)
-    ranked, used = policy.rank("fast", bm, de)
+    assert not policy.needs_reranker("accurate", bm, de)
+    ranked, used = policy.rank("accurate", bm, de)
     assert used == "hybrid" and ranked[0] == "a"
     bm2 = ["b", "a"]
-    assert policy.needs_reranker("fast", bm2, de)
-    ranked, used = policy.rank("fast", bm2, de, {"b": 0.1, "a": 2.0, "c": 1.0, "d": -1})
+    assert policy.needs_reranker("accurate", bm2, de)
+    ranked, used = policy.rank("accurate", bm2, de, {"b": 0.1, "a": 2.0, "c": 1.0, "d": -1})
     assert used == "rerank" and ranked[:3] == ["a", "c", "b"]
 
 
@@ -217,3 +217,13 @@ def test_yaml_frontmatter_is_not_indexed_and_line_numbers_stay_exact():
     md = "---\nname: Deploy\ndescription: how we deploy\n---\n# Deploy\nrun kamal\n"
     secs = split_sections(md, ".md")
     assert [(s[1], s[2], s[4]) for s in secs] == [(["Deploy"], 5, "# Deploy\nrun kamal")]
+
+
+def test_user_modes_map_to_policies():
+    from defrost_ai.retrieval import policy
+    import pytest
+    assert policy.normalize(None) == "accurate" and policy.normalize("Accurate") == "accurate"
+    assert policy.normalize("fast") == "hybrid"                     # best ranking without the reranker
+    assert policy.normalize("rerank") == "rerank"                   # expert modes still work
+    with pytest.raises(ValueError):
+        policy.normalize("turbo")

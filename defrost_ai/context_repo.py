@@ -171,7 +171,7 @@ def render_root_index(root: Path, domain: str) -> str:
     return (f"# Context repository: {domain}\n\n"
             "Working memory of this project: handoff notes and the user's doc/code decisions. Core files (below) are "
             "shown in every brief; open a folder's MEMORY.md for its index, then only the files you need. Search: "
-            f"memory_search(query, domains=[\"{context_domain(domain)}\"]).\n\n"
+            f"search(question, domains=[\"{context_domain(domain)}\"]).\n\n"
             "## Core files\n" + ("\n".join(f"- [{m.get('name', n)}]({n}): {m.get('description', '')}" for n, m in core)
                                  or "(none)") +
             "\n\n## Folders\n" + ("\n".join(folders) or "(none)") + "\n")

@@ -1,109 +1,173 @@
-"""defrost command line.
+"""defrost: your project's docs and code, searchable by your AI tools, with citations.
 
-  defrost build WORKSPACE.json [--domain NAME] [--description TEXT]   build or update (incremental) a memory
-  defrost update DOMAIN                                               rebuild a registered domain
-  defrost rollback DOMAIN                                             restore the previous build
-  defrost setup [PATH] [--on-main-merge] [--every-hours N] [--claude-hook] [--doc-rules] [--claude] [--doc-trust high|low]
-                                                                         one-shot project setup + refresh triggers
-  defrost refresh DOMAIN [--if-changed]                               what the triggers run
-  defrost status [DOMAIN]                                             staleness + installed triggers
-  defrost download-weights                                            fetch + verify the model weights (auto on first use)
-  defrost mcp                                                         MCP server (stdio) for Claude Code / Desktop
-  defrost claude install [DIR] [--user]                               slash commands + `claude mcp add defrost`
-  defrost domains                                                     list registered domains
-  defrost search "question" [--domain D ...] [--mode fast] [-k 5] [--json]
-  defrost docs-for config/deploy.yml [...]                           doc sections to review after editing these files
-  defrost serve [--port 8765]                                         resident HTTP service
-  defrost benchmark --suite FILE.jsonl --memory DIR [--split dev]
-  defrost verify-weights                                              check model files against MANIFEST.json
-  defrost context init|check|log|brief|defrag|branches|merge|remote   the project's git-backed working memory"""
+Start here:
+  defrost setup                 set up this repository (asks 3 questions; --yes takes the recommended answers)
+  defrost search "question"     find the doc sections that answer it, with the code they name
+  defrost status                what is indexed, how fresh it is, which settings are active
+
+Day to day:
+  defrost refresh               update the index now (setup already does this after every merge to main)
+  defrost docs [FILES]          which doc sections to update for your change
+  defrost note "goal"           save a handoff note for the next session; --brief shows the latest
+  defrost config [KEY [VALUE]]  personal settings, e.g. `defrost config search.mode fast`
+
+Search modes:
+  accurate (default)  best results; reranks when the two retrievers disagree (~1-2 s on Apple Silicon)
+  fast                no reranker (~0.1 s); a little less accurate. Use --fast, or make it your default.
+
+For tools and scripts: defrost mcp (MCP server), defrost serve (local HTTP service)."""
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 import sys
 
+PUBLIC = ["setup", "search", "status", "refresh", "docs", "note", "config", "mcp", "serve"]
+PROFILES = {
+    "minimal":  dict(on_main_merge=True),
+    "standard": dict(on_main_merge=True, doc_rules=True, handoff=True, docs_sync=True, docs_gate=False),
+    "full":     dict(on_main_merge=True, doc_rules=True, handoff=True, docs_sync=True, docs_gate=True,
+                     handoff_on_compact=True),
+}
+PROFILE_TEXT = {
+    "minimal": "keep the index fresh after every merge or commit to main; nothing else",
+    "standard": "minimal + doc-writing rules in CLAUDE.md + handoff notes after /clear + a reminder of commits "
+                "whose docs need an update (recommended)",
+    "full": "standard + Claude is asked to update docs before it finishes and before it commits + a handoff note "
+            "is written automatically before compaction",
+}
+
+
+def _k(v):
+    return v if v == "auto" else int(v)
+
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="defrost", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub = ap.add_subparsers(dest="cmd", required=True, metavar="COMMAND")
+
+    st = sub.add_parser("setup", help="set up a repository (quick: 3 questions)",
+                        description="Index this repository and keep it fresh. Without options in a terminal it asks "
+                                    "3 questions; --yes takes the recommended answers.")
+    st.add_argument("path", nargs="?", default=".")
+    st.add_argument("--profile", choices=list(PROFILES), help="; ".join(f"{k}: {v}" for k, v in PROFILE_TEXT.items()))
+    st.add_argument("--mode", choices=["accurate", "fast"], help="your default search mode (saved in config)")
+    st.add_argument("--doc-trust", choices=["low", "high"],
+                    help="low (default): docs are hints, Claude checks the code. high: docs are reliable.")
+    st.add_argument("--yes", "-y", action="store_true", help="no questions: recommended answers")
+    st.add_argument("--remove", "--remove-triggers", dest="remove_triggers", action="store_true",
+                    help="remove every hook and schedule defrost installed in this repository")
+    adv = st.add_argument_group("customize (each overrides the profile)")
+    adv.add_argument("--domain", help="memory name (default: the folder name)")
+    adv.add_argument("--build", choices=["now", "background", "skip"], default="now")
+    adv.add_argument("--every-hours", type=float, help="also refresh on a schedule (launchd on macOS, cron on Linux)")
+    adv.add_argument("--claude-hook", action="store_true", help="also refresh when a Claude session starts")
+    adv.add_argument("--no-doc-rules", action="store_true", help="do not add the doc-writing rules to CLAUDE.md")
+    adv.add_argument("--handoff-on-compact", action="store_true", help="write a handoff note before compaction")
+    adv.add_argument("--docs-auto", action="store_true",
+                     help="write docs with claude -p after commits made outside Claude (costs Claude usage)")
+    adv.add_argument("--docs-budget", type=float, default=0.5, help="USD cap per automatic docs run")
+    adv.add_argument("--docs-auto-merge", action="store_true", help="merge automatic docs without review")
+    adv.add_argument("--memory-dir", default="defrost-memory", help="notes folder inside the project")
+    adv.add_argument("--memory-home", action="store_true", help="keep notes in ~/.defrost-ai, not in the project")
+    adv.add_argument("--claude", action="store_true", help="also install slash commands + MCP for this project only")
+    for flag in ("--on-main-merge", "--doc-rules", "--docs-sync", "--handoff"):     # before 1.2: pick features one by one
+        st.add_argument(flag, action="store_true", help=argparse.SUPPRESS)
+
+    s = sub.add_parser("search", help="find the doc sections that answer a question")
+    s.add_argument("query")
+    mode = s.add_mutually_exclusive_group()
+    mode.add_argument("--fast", dest="mode", action="store_const", const="fast", help="no reranker (~0.1 s)")
+    mode.add_argument("--accurate", dest="mode", action="store_const", const="accurate", help="best results (default)")
+    mode.add_argument("--mode", dest="mode", help=argparse.SUPPRESS)          # expert: bm25|dense|hybrid|rerank|all
+    s.add_argument("-k", type=_k, default=None, help='sections to return: a number or "auto" (default: config)')
+    s.add_argument("--domain", action="append", help="search these memories (default: all)")
+    s.add_argument("--json", action="store_true")
+    s.add_argument("--merge", choices=["rerank", "rrf"], help=argparse.SUPPRESS)
+    s.add_argument("--local", action="store_true", help=argparse.SUPPRESS)
+
+    ss = sub.add_parser("status", help="what is indexed, how fresh, which settings")
+    ss.add_argument("domain", nargs="?"); ss.add_argument("--json", action="store_true")
+
+    rf = sub.add_parser("refresh", help="update the index now (incremental)")
+    rf.add_argument("domain", nargs="?", help="memory name (default: this directory's)")
+    rf.add_argument("--if-changed", action="store_true", help="skip when no doc or code file changed")
+    rf.add_argument("--rollback", action="store_true", help="restore the previous build instead")
+
+    dc = sub.add_parser("docs", help="doc sections to update for a change")
+    dc.add_argument("files", nargs="*", help="changed files (default: your uncommitted change)")
+    dc.add_argument("--staged", action="store_true"); dc.add_argument("--commit")
+    dc.add_argument("--pending", action="store_true", help="commits whose docs still need an update")
+    dc.add_argument("--done", metavar="SHA", help="mark a commit's doc follow-up as done")
+    dc.add_argument("--json", action="store_true")
+
+    nt = sub.add_parser("note", help="handoff notes and doc/code decisions")
+    nt.add_argument("goal", nargs="?", help="what the work is for (with acceptance criteria)")
+    nt.add_argument("--state", default=""); nt.add_argument("--next", action="append", default=[])
+    nt.add_argument("--why", action="append", default=[], help="a decision and its reason (repeatable)")
+    nt.add_argument("--file", action="append", default=[])
+    nt.add_argument("--brief", action="store_true", help="show the latest note (what a new session starts from)")
+    nt.add_argument("--history", action="store_true", help="every note and decision, newest first")
+    nt.add_argument("--conflict", metavar="DOC_PATH", help="record your decision on a doc/code conflict")
+    nt.add_argument("--verdict", choices=["code", "doc", "both", "open"],
+                    help="code: the code is right | doc: the doc is right | both: no conflict | open: unsure")
+    nt.add_argument("--domain")
+
+    cg = sub.add_parser("config", help="personal settings (search mode, doc trust, models, port)")
+    cg.add_argument("key", nargs="?"); cg.add_argument("value", nargs="?")
+    cg.add_argument("--reset", action="store_true", help="back to the default")
+
+    sub.add_parser("mcp", help="MCP server (stdio): claude mcp add defrost -- defrost mcp")
+    v = sub.add_parser("serve", help="local HTTP service (started automatically)")
+    v.add_argument("--port", type=int); v.add_argument("--host", default="127.0.0.1")
+
+    hk = sub.add_parser("hook")                                   # hidden: the one entry point every hook calls
+    hk.add_argument("event", choices=["brief", "pending", "stop", "commit", "post-commit", "pre-compact"])
+
+    # ---- old commands (hidden; kept so installed hooks and scripts keep working) ------------------------------------
     b = sub.add_parser("build"); b.add_argument("workspace"); b.add_argument("--domain"); b.add_argument("--description", default="")
     u = sub.add_parser("update"); u.add_argument("domain")
     r = sub.add_parser("rollback"); r.add_argument("domain")
     sub.add_parser("domains")
-    df = sub.add_parser("docs-for", help="doc sections that describe these code/config files (review after editing)")
+    df = sub.add_parser("docs-for")
     df.add_argument("paths", nargs="+"); df.add_argument("--domain", action="append")
-    s = sub.add_parser("search"); s.add_argument("query"); s.add_argument("--domain", action="append")
-    s.add_argument("--mode", default="fast"); s.add_argument("-k", type=lambda v: v if v == "auto" else int(v), default=5,
-                   help='number of sections, or "auto" (adaptive, 1-5)'); s.add_argument("--json", action="store_true")
-    s.add_argument("--merge", default="rerank", choices=["rerank", "rrf"])
-    s.add_argument("--local", action="store_true", help="load the models in this process instead of using the service")
-    v = sub.add_parser("serve"); v.add_argument("--port", type=int, default=8765); v.add_argument("--host", default="127.0.0.1")
     e = sub.add_parser("benchmark"); e.add_argument("--suite", required=True); e.add_argument("--memory", required=True)
     e.add_argument("--split", default="dev"); e.add_argument("--out"); e.add_argument("--rankings")
     e.add_argument("--only", help="keep suite rows whose \"suite\" field matches (multi-memory suites)")
     sub.add_parser("verify-weights")
-    st = sub.add_parser("setup", help="one-shot project setup + refresh triggers")
-    st.add_argument("path", nargs="?", default="."); st.add_argument("--domain")
-    st.add_argument("--build", choices=["now", "background", "skip"], default="now")
-    st.add_argument("--on-main-merge", action="store_true", help="git hooks: refresh when changes land on main/master")
-    st.add_argument("--every-hours", type=float, help="refresh every N hours (launchd on macOS, cron on Linux)")
-    st.add_argument("--claude-hook", action="store_true", help="Claude Code SessionStart hook: refresh when stale")
-    st.add_argument("--doc-rules", action="store_true", help="add the doc-writing rules block to CLAUDE.md")
-    st.add_argument("--claude", action="store_true", help="install slash commands + register the MCP server")
-    st.add_argument("--handoff", action="store_true",
-                    help="Claude Code: after /clear or compaction, start from the latest handoff note (project hook)")
-    st.add_argument("--docs-sync", action="store_true",
-                    help="Claude Code: document changes after editing and before git commit; post-commit doc tasks")
-    st.add_argument("--docs-auto", action="store_true",
-                    help="also run claude -p /document-changes after every commit made outside Claude (costs tokens)")
-    st.add_argument("--docs-budget", type=float, default=0.5, help="USD cap per automatic run (default 0.5)")
-    st.add_argument("--docs-auto-merge", action="store_true",
-                    help="fast-forward the docs-auto branch into the checkout (default: keep defrost/docs/<sha> for review)")
-    st.add_argument("--handoff-on-compact", action="store_true",
-                    help="Claude Code PreCompact hook: write an extractive handoff note (no model calls); implies --handoff")
-    st.add_argument("--memory-dir", default="defrost-memory",
-                    help="folder in the project for the context repository (default defrost-memory)")
-    st.add_argument("--memory-home", action="store_true",
-                    help="keep the context repository in ~/.defrost-ai instead of the project folder")
-    st.add_argument("--remove-triggers", action="store_true")
-    st.add_argument("--doc-trust", choices=["high", "low"],
-                    help="high: docs are reliable, answer from them; low (default): docs are hints, always check code")
-    rf = sub.add_parser("refresh"); rf.add_argument("domain"); rf.add_argument("--if-changed", action="store_true")
-    ss = sub.add_parser("status"); ss.add_argument("domain", nargs="?")
-    cf = sub.add_parser("conflicts", help="doc/code conflicts decided by the user (list, or record one)")
+    cf = sub.add_parser("conflicts")
     cf.add_argument("domain"); cf.add_argument("--doc", help="doc path as cited by search, to record a decision")
     cf.add_argument("--decision", choices=["code", "doc", "both", "open"]); cf.add_argument("--note", default="")
     sub.add_parser("download-weights")
-    sub.add_parser("mcp", help="MCP server over stdio (claude mcp add defrost -- defrost mcp)")
-    c = sub.add_parser("claude", help="Claude Code setup: slash commands + MCP registration")
+    c = sub.add_parser("claude")
     c.add_argument("action", choices=["install"]); c.add_argument("project", nargs="?", default=".")
     c.add_argument("--user", action="store_true", help="install for all projects (~/.claude/commands, user scope)")
     c.add_argument("--no-mcp", action="store_true", help="only copy the slash commands")
-    ho = sub.add_parser("handoff", help="write a session handoff note (what the SessionStart hook shows after /clear)")
+    ho = sub.add_parser("handoff")
     ho.add_argument("--goal", required=True); ho.add_argument("--state", default="")
     ho.add_argument("--decision", action="append", default=[]); ho.add_argument("--next", action="append", default=[])
     ho.add_argument("--file", action="append", default=[]); ho.add_argument("--domain")
     ho.add_argument("--no-index", action="store_true")
-    br = sub.add_parser("brief", help="print the latest handoff brief for this directory (hook command; no models)")
+    br = sub.add_parser("brief")
     br.add_argument("--domain")
-    dp = sub.add_parser("docs-plan", help="doc sections to update for a change (model-free)")
+    dp = sub.add_parser("docs-plan")
     dp.add_argument("--staged", action="store_true"); dp.add_argument("--commit"); dp.add_argument("--json", action="store_true")
     dp.add_argument("--domain")
-    dh = sub.add_parser("docs-hook", help="Claude Code hook handler (reads the hook JSON on stdin)")
+    dh = sub.add_parser("docs-hook")
     dh.add_argument("event", choices=["stop", "commit"])
-    dr = sub.add_parser("docs-record", help="git post-commit: save the commit's doc plan as a pending task")
+    dr = sub.add_parser("docs-record")
     dr.add_argument("commit", nargs="?", default="HEAD")
-    sub.add_parser("docs-pending", help="print pending doc tasks for this repo (SessionStart hook)")
-    dv = sub.add_parser("docs-resolve", help="mark a commit's doc task done"); dv.add_argument("commit", nargs="?")
-    da = sub.add_parser("docs-auto", help="run claude -p /document-changes <sha> (budget-capped; edits docs only)")
+    sub.add_parser("docs-pending")
+    dv = sub.add_parser("docs-resolve"); dv.add_argument("commit", nargs="?")
+    da = sub.add_parser("docs-auto")
     da.add_argument("commit", nargs="?", default="HEAD"); da.add_argument("--budget", type=float, default=0.5)
     da.add_argument("--dry-run", action="store_true")
     da.add_argument("--merge", action="store_true", help="fast-forward the branch into the checkout when clean")
-    sub.add_parser("compact-handoff", help="Claude Code PreCompact hook handler (reads the hook JSON on stdin)")
-    cx = sub.add_parser("context", help="the project's context repository (git-backed working memory)")
+    sub.add_parser("compact-handoff")
+    cx = sub.add_parser("context")
     cx.add_argument("action", choices=["init", "check", "log", "defrag", "branches", "merge", "remote", "brief",
                                              "where", "place"])
     cx.add_argument("arg", nargs="?", help="merge: branch name; remote: URL ('none' to remove); "
@@ -114,6 +178,8 @@ def main(argv=None):
     cx.add_argument("--review", action="store_true", help="defrag: keep the result on a branch instead of merging")
     cx.add_argument("--repo", help="branches/merge: a project repo instead of the context repo (docs-auto branches)")
     a = ap.parse_args(argv)
+    if a.cmd in NEW:
+        return NEW[a.cmd](a) or 0
 
     if a.cmd == "build":
         from defrost_ai.builder import build
@@ -148,39 +214,12 @@ def main(argv=None):
             print(f"{h['file']}: {h['domain']}:{h['path']}:L{h['lines'][0]}-{h['lines'][1]}  {h['heading']}")
         if not hits:
             print("no doc section links to these files")
-    elif a.cmd == "search":
-        from defrost_ai.memory import Memory
-        if a.local:                                      # load the models in this process (slow: every call)
-            from defrost_ai.library import Library
-            res = Library().search(a.query, a.domain, a.mode, a.k, a.merge)
-        else:                                            # resident service: models stay loaded between calls
-            from defrost_ai.service import client
-            client.ensure_service()
-            res = client.search(a.query, a.domain, a.mode, a.k, context=False, merge=a.merge)
-        print(json.dumps(res, indent=1) if a.json else f"mode {res['mode']} -> {res['mode_used']}\n\n" + Memory.context(res))
-    elif a.cmd == "serve":
-        from defrost_ai.service.http_server import serve
-        serve(a.port, a.host)
     elif a.cmd == "benchmark":
         from defrost_ai.evaluation.benchmark import print_report, run
         res = run(a.suite, a.memory, a.split, save_rankings=a.rankings, only=a.only)
         print_report(res)
         if a.out:
             open(a.out, "w").write(json.dumps(res, indent=1))
-    elif a.cmd == "setup":
-        from defrost_ai.project_setup import setup
-        res = setup(a.path, a.domain, a.build, a.on_main_merge, a.every_hours, a.claude_hook, a.doc_rules, a.claude,
-                    a.remove_triggers, doc_trust=a.doc_trust, handoff=a.handoff or a.handoff_on_compact,
-                    handoff_on_compact=a.handoff_on_compact, docs_auto_merge=a.docs_auto_merge,
-                    memory_dir=None if a.memory_home else a.memory_dir, docs_sync=a.docs_sync or a.docs_auto, docs_auto=a.docs_auto, docs_budget=a.docs_budget)
-        print(json.dumps(res, indent=1, default=str))
-    elif a.cmd == "refresh":
-        from defrost_ai.project_setup import refresh
-        res = refresh(a.domain, a.if_changed, log=lambda m: print(time.strftime("%F %T"), m, flush=True))
-        return 0 if res.get("job") != "failed" else 1
-    elif a.cmd == "status":
-        from defrost_ai.project_setup import status
-        print(json.dumps(status(a.domain), indent=1))
     elif a.cmd == "download-weights":
         from defrost_ai.models.weights import download_weights, models_dir
         print(f"weights ready: {models_dir()}") if _weights_ok() else download_weights()
@@ -304,6 +343,269 @@ def main(argv=None):
         print(json.dumps({"dir": str(models_dir()), **res}, indent=1))
         return 0 if res["ok"] else 1
     return 0
+
+
+# ---- commands ------------------------------------------------------------------------------------------------------
+def _here(a=None) -> str | None:
+    from defrost_ai import notes
+    return getattr(a, "domain", None) if isinstance(getattr(a, "domain", None), str) else notes.domain_for(Path.cwd())
+
+
+def _ask(question: str, options: list[tuple[str, str]], default: int = 0) -> str:
+    print(f"\n{question}")
+    for i, (value, text) in enumerate(options, 1):
+        print(f"  {i}. {value:<9} {text}{'  (recommended)' if i - 1 == default else ''}")
+    while True:
+        raw = input(f"Choose 1-{len(options)} [{default + 1}]: ").strip()
+        if not raw:
+            return options[default][0]
+        if raw.isdigit() and 1 <= int(raw) <= len(options):
+            return options[int(raw) - 1][0]
+        if raw in {v for v, _ in options}:
+            return raw
+        print("  please type a number from the list")
+
+
+def cmd_setup(a):
+    from defrost_ai import settings
+    from defrost_ai.project_setup import setup
+    if a.remove_triggers:
+        print(f"removed defrost hooks and schedules from {Path(a.path).resolve()}")
+        setup(a.path, a.domain, remove=True, log=lambda m: None)
+        return 0
+    interactive = sys.stdin.isatty() and not a.yes and not (a.profile or a.mode or a.doc_trust)
+    if interactive:
+        print("defrost setup: 3 questions. Press Enter for the recommended answer.")
+        a.profile = _ask("How much should defrost do in this repository?",
+                         [(k, v) for k, v in PROFILE_TEXT.items()], default=1)
+        a.mode = _ask("Default search mode?",
+                      [("accurate", "best results; ~1-2 s when the reranker runs"),
+                       ("fast", "~0.1 s; no reranker, a little less accurate")], default=0)
+        a.doc_trust = _ask("How much should Claude trust this project's docs?",
+                           [("low", "code is the truth: docs are hints, Claude checks the code (fast-changing projects)"),
+                            ("high", "docs are reliable: answer from them, check code only when flagged")], default=0)
+    legacy = {k: True for k in ("on_main_merge", "doc_rules", "docs_sync", "handoff") if getattr(a, k)}
+    profile = a.profile or ("custom" if legacy else "standard")
+    opts = dict(PROFILES.get(profile, legacy))
+    if a.no_doc_rules:
+        opts["doc_rules"] = False
+    if a.handoff_on_compact:
+        opts.update(handoff=True, handoff_on_compact=True)
+    if a.docs_auto:
+        opts.update(docs_sync=True, docs_auto=True)
+    if a.mode:
+        settings.set_("search.mode", a.mode)
+    print(f"\nSetting up {Path(a.path).resolve()} (profile {profile}: {PROFILE_TEXT.get(profile, ', '.join(legacy))})")
+    res = setup(a.path, a.domain, a.build, every_hours=a.every_hours, claude_hook=a.claude_hook, claude=a.claude,
+                doc_trust=a.doc_trust or settings.get("project.doc_trust"), docs_budget=a.docs_budget,
+                docs_auto_merge=a.docs_auto_merge, memory_dir=None if a.memory_home else a.memory_dir,
+                log=lambda m: print("  " + m, flush=True), **opts)
+    _print_setup(res, settings.get("search.mode"))
+    return 0 if (res.get("build") or {}).get("job", "done") != "failed" else 1
+
+
+def _print_setup(res: dict, mode: str) -> None:
+    b = res.get("build") or {}
+    trig = res.get("triggers", {})
+    labels = {"on_main_merge": "refresh after every merge or commit to main", "every_hours": "refresh on a schedule",
+              "claude_hook": "refresh when a Claude session starts", "handoff": "handoff note shown after /clear",
+              "handoff_on_compact": "handoff note written before compaction",
+              "docs_sync": "doc follow-ups for every commit"}
+    from defrost_ai.project_setup import status
+    c = next((r.get("counts") or {} for r in status(res["domain"])), {})
+    built = (f": {c.get('docs', 0)} docs, {c.get('sections', 0)} sections, {c.get('doc_code_links', 0)} doc->code links"
+             if b.get("refreshed") else "")
+    print(f"\nDone. Memory '{res['domain']}'{built}")
+    for k in trig:
+        print(f"  - {labels.get(k, k)}")
+    print(f"  - doc trust: {res.get('doc_trust')}; default search mode: {mode}")
+    print("\nTry:  defrost search \"how does <something> work?\"      In Claude: just ask; it calls the memory.")
+    print("Change later:  defrost setup --profile full | defrost config search.mode fast | defrost setup --remove")
+
+
+def cmd_search(a):
+    from defrost_ai import settings
+    from defrost_ai.memory import Memory
+    k = a.k if a.k is not None else _k(str(settings.get("search.k")))
+    if a.local:                                      # load the models in this process (slow: every call)
+        from defrost_ai.library import Library
+        res = Library().search(a.query, a.domain, a.mode, k, a.merge)
+    else:                                            # resident service: models stay loaded between calls
+        from defrost_ai.service import client
+        client.ensure_service()
+        res = client.search(a.query, a.domain, a.mode, k, context=False, merge=a.merge)
+    if a.json:
+        print(json.dumps(res, indent=1))
+        return 0
+    used = res["mode_used"] if isinstance(res["mode_used"], str) else ", ".join(sorted(set(res["mode_used"].values())))
+    note = {"fast": "  (fast: no reranker; use --accurate for the best results)",
+            "accurate": f"  (accurate: {'reranked' if 'rerank' in used else 'retrievers agreed, no rerank needed'})"}
+    print(f"{len(res['hits'])} sections{note.get(res['mode'], '')}\n\n" + Memory.context(res))
+
+
+def cmd_status(a):
+    from defrost_ai import settings
+    from defrost_ai.project_setup import status
+    rows = status(a.domain)
+    if a.json:
+        print(json.dumps(rows, indent=1, default=str))
+        return 0
+    if not rows:
+        print("No memories yet. Run `defrost setup` in a repository.")
+    names = {r["domain"] for r in rows}
+    notes_of = {r["domain"][:-len("-context")]: r for r in rows
+                if r["domain"].endswith("-context") and r["domain"][:-len("-context")] in names}
+    for r in rows:
+        if r["domain"].endswith("-context") and r["domain"][:-len("-context")] in names:
+            continue                                     # shown under its project
+        c = r.get("counts") or {}
+        fresh = "stale: " + r["why"] if r["stale"] else "up to date"
+        print(f"{r['domain']}: {c.get('sections', 0)} sections, {c.get('doc_code_links', 0)} doc->code links; "
+              f"built {str(r.get('built_at') or 'never')[:16]}; {fresh}")
+        if r.get("triggers"):
+            print(f"  refresh: {', '.join(r['triggers'])}")
+        n = notes_of.get(r["domain"])
+        if n:
+            print(f"  notes and decisions: {(n.get('counts') or {}).get('docs', 0)} files")
+    print(f"\nsearch mode {settings.get('search.mode')} | backend {_backend()} | weights {_weights_version()} "
+          f"| settings: defrost config")
+
+
+def _backend() -> str:
+    try:
+        from defrost_ai.models import mlx_backend
+        return "mlx" if mlx_backend.available() else "torch"
+    except Exception:                                   # noqa: BLE001
+        return "torch"
+
+
+def _weights_version() -> str:
+    try:
+        from defrost_ai.models.weights import models_dir, verify
+        return str(verify(models_dir(download=False)).get("version"))
+    except Exception:                                   # noqa: BLE001
+        return "not downloaded"
+
+
+def cmd_refresh(a):
+    from defrost_ai.project_setup import refresh
+    name = a.domain or _here()
+    if not name:
+        print("This directory has no memory yet. Run `defrost setup` here first.")
+        return 1
+    if a.rollback:
+        from defrost_ai.builder import rollback
+        from defrost_ai.library import read_registry
+        print("rolled back to the previous build" if rollback(read_registry()["domains"][name]["workspace"])
+              else "no previous build to roll back to")
+        return 0
+    res = refresh(name, a.if_changed, log=lambda m: print(time.strftime("%F %T"), m, flush=True))
+    return 0 if res.get("job") != "failed" else 1
+
+
+def cmd_docs(a):
+    from defrost_ai import docsync, notes
+    domain = _here()
+    if a.pending:
+        print(docsync.pending_brief(domain) or "no commits waiting for doc updates")
+    elif a.done:
+        print(docsync.resolve(domain, a.done), "follow-up(s) marked done")
+    elif a.files:
+        from defrost_ai.library import Library
+        hits = Library().docs_for(a.files, [domain] if domain else None)
+        for h in hits:
+            print(f"{h['file']}: {h['domain']}:{h['path']}:L{h['lines'][0]}-{h['lines'][1]}  {h['heading']}")
+        print("" if hits else "no doc section describes these files")
+    else:
+        p = docsync.plan(Path.cwd(), staged=a.staged, commit=a.commit, domain=domain)
+        print(json.dumps(p, indent=1) if a.json else (docsync.render(p, 25) or "docs are up to date for this change"))
+
+
+def cmd_note(a):
+    from defrost_ai import conflicts, notes
+    name = a.domain or notes.domain_for(Path.cwd())
+    if not name:
+        print("This directory has no memory yet. Run `defrost setup` here first.")
+        return 1
+    if a.conflict:
+        if not a.verdict:
+            print("add --verdict code|doc|both|open")
+            return 1
+        row = conflicts.record(name, a.conflict, a.verdict)
+        print(f"decision saved: {a.conflict}: {row['meaning']}")
+    elif a.brief:
+        print(notes.brief(name) or "no notes yet")
+    elif a.history:
+        from defrost_ai import context_repo
+        for r in context_repo.log(name, 30):
+            print(f"{r['date']}  {r['subject']}")
+    elif a.goal:
+        f = notes.write_handoff(name, a.goal, a.state, a.why, a.next, a.file)
+        print(f"note saved: {f}")
+        try:
+            notes.index(name, wait=False)
+        except Exception:                                # noqa: BLE001  (searchable after the next refresh)
+            pass
+    else:
+        print('usage: defrost note "goal" [--state ...] [--next ...] | --brief | --history | --conflict DOC --verdict X')
+        return 1
+
+
+def cmd_config(a):
+    from defrost_ai import settings
+    if not a.key:
+        print(settings.show())
+        return 0
+    if a.key not in settings.BY_KEY:
+        print(f"unknown setting {a.key!r}. Settings:\n" + "\n".join(f"  {k}" for k in settings.BY_KEY))
+        return 1
+    if a.reset or a.value is not None:
+        try:
+            settings.set_(a.key, None if a.reset else a.value)
+        except ValueError as e:
+            print(e)
+            return 1
+    print(f"{a.key} = {settings.get(a.key)} ({settings.source(a.key)})")
+
+
+def cmd_mcp(a):
+    from defrost_ai.service.mcp_server import main as mcp_main
+    mcp_main()
+
+
+def cmd_serve(a):
+    from defrost_ai import settings
+    from defrost_ai.service.http_server import serve
+    serve(a.port or settings.get("service.port"), a.host)
+
+
+def cmd_hook(a):
+    """Every installed hook calls `defrost hook <event>`; a failing hook prints to stderr and never blocks."""
+    try:
+        from defrost_ai import compact_handoff, docsync, notes
+        if a.event == "brief":
+            text = notes.brief(notes.domain_for(Path.cwd()))
+        elif a.event == "pending":
+            text = docsync.pending_brief(notes.domain_for(Path.cwd()))
+        elif a.event in ("stop", "commit"):
+            out = docsync.hook(a.event, json.loads(sys.stdin.read() or "{}"))
+            text = json.dumps(out) if out else ""
+        elif a.event == "post-commit":
+            f = docsync.record_commit(Path.cwd(), "HEAD")
+            text = time.strftime("%F %T ") + (f"docs follow-up recorded: {f}" if f else "no doc follow-up")
+        else:                                            # pre-compact
+            f = compact_handoff.run(json.loads(sys.stdin.read() or "{}"))
+            print(f"defrost: handoff note written before compaction: {f}" if f else "", file=sys.stderr)
+            text = ""
+        if text:
+            print(text)
+    except Exception as e:                               # noqa: BLE001
+        print(f"defrost hook {a.event}: {e}", file=sys.stderr)
+    return 0
+
+
+NEW = {"setup": cmd_setup, "search": cmd_search, "status": cmd_status, "refresh": cmd_refresh, "docs": cmd_docs,
+       "note": cmd_note, "config": cmd_config, "mcp": cmd_mcp, "serve": cmd_serve, "hook": cmd_hook}
 
 
 def _weights_ok() -> bool:

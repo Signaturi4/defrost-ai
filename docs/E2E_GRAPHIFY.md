@@ -29,7 +29,7 @@ docstring node rather than code was removed.
 |---|---|---|
 | graphify-ast | stock graphify 0.4.32, `graphify update` (AST only, the free tier) | 0 tokens |
 | graphify-full | stock graphify 0.4.32 after the `/graphify` skill (Claude semantic tier over docs + code) | **$11.87** in Claude usage (uvicorn $4.99, cattrs $2.61, structlog $4.27) |
-| defrost | graphify fork + defrost, `memory_search` mode `fast`, k=5 | $0, 17 min local (Apple GPU, shared with other jobs) |
+| defrost | graphify fork + defrost, `memory_search` mode `fast`, k=5 (1.1 names; today's `search` mode `accurate`) | $0, 17 min local (Apple GPU, shared with other jobs) |
 | defrost+graph | defrost context followed by the graphify-ast context | as above |
 
 graphify is queried on the question's own repo graph, which is oracle routing in its favour. defrost searches all three

@@ -1,0 +1,103 @@
+"""The 1.2 surface: two search modes, a settings file, 9 public commands, one hook entry point, 4 MCP tools."""
+import json
+
+import pytest
+
+
+def test_settings_file_precedence_and_validation(tmp_path, monkeypatch):
+    from defrost_ai import settings
+    monkeypatch.setenv("DEFROST_HOME", str(tmp_path))
+    monkeypatch.delenv("DEFROST_SEARCH_MODE", raising=False)
+    assert settings.get("search.mode") == "accurate" and settings.source("search.mode") == "default"
+    settings.set_("search.mode", "fast")
+    assert settings.get("search.mode") == "fast" and settings.source("search.mode") == "config.toml"
+    text = (tmp_path / "config.toml").read_text()
+    assert 'mode = "fast"' in text and "# " in text                       # commented, self-explaining file
+    monkeypatch.setenv("DEFROST_SEARCH_MODE", "accurate")                  # env wins for one run
+    assert settings.get("search.mode") == "accurate"
+    with pytest.raises(ValueError):
+        settings.set_("search.mode", "turbo")
+    settings.set_("search.mode", None)
+    monkeypatch.delenv("DEFROST_SEARCH_MODE")
+    assert settings.get("search.mode") == "accurate"
+
+
+def test_help_lists_only_the_public_commands(capsys):
+    from defrost_ai import cli
+    with pytest.raises(SystemExit):
+        cli.main(["--help"])
+    out = capsys.readouterr().out
+    for c in cli.PUBLIC:
+        assert f"    {c} " in out
+    for hidden in ("docs-hook", "docs-record", "compact-handoff", "benchmark", "context", "hook "):
+        assert f"    {hidden}" not in out
+
+
+def test_old_commands_still_parse_for_installed_hooks():
+    from defrost_ai import cli
+    import argparse
+    for argv in (["refresh", "acme", "--if-changed"], ["docs-pending"], ["brief"], ["docs-hook", "stop"],
+                 ["setup", ".", "--on-main-merge", "--doc-rules", "--build", "skip"]):
+        try:
+            cli.main(argv + ["--help"])
+        except SystemExit as e:
+            assert e.code == 0, argv
+
+
+def test_hook_entry_point_never_fails(monkeypatch, capsys, tmp_path):
+    from defrost_ai import cli
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.stdin", __import__("io").StringIO("not json"))
+    assert cli.main(["hook", "stop"]) == 0                                 # broken input: message, exit 0
+    assert "defrost hook stop" in capsys.readouterr().err
+
+
+def test_profiles_are_ordered_supersets():
+    from defrost_ai.cli import PROFILES
+    keys = [{k for k, v in PROFILES[p].items() if v} for p in ("minimal", "standard", "full")]
+    assert keys[0] < keys[1] < keys[2]
+    assert not PROFILES["standard"]["docs_gate"]                           # no commit blocking by default
+
+
+def test_docs_hooks_without_gate_and_with_one_entry_point(tmp_path):
+    import subprocess
+    from defrost_ai import docsync
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    docsync.install_hooks(tmp_path, gate=False)
+    hooks = json.loads((tmp_path / ".claude/settings.json").read_text())["hooks"]
+    assert set(hooks) == {"SessionStart"} and "hook pending" in json.dumps(hooks)
+    docsync.install_hooks(tmp_path, gate=True)                              # re-run replaces, never duplicates
+    hooks = json.loads((tmp_path / ".claude/settings.json").read_text())["hooks"]
+    assert set(hooks) == {"SessionStart", "Stop", "PreToolUse"} and len(hooks["SessionStart"]) == 1
+    assert "hook post-commit" in (tmp_path / ".git/hooks/post-commit").read_text()
+
+
+def test_mcp_server_has_four_tools():
+    pytest.importorskip("mcp")
+    import asyncio
+    from defrost_ai.service.mcp_server import build_server
+    tools = asyncio.run(build_server().list_tools())
+    assert sorted(t.name for t in tools) == ["docs_for", "refresh", "remember", "search"]
+
+
+def test_doc_plan_skips_paths_the_index_excludes(tmp_path, monkeypatch):
+    from defrost_ai import docsync
+    monkeypatch.setenv("DEFROST_HOME", str(tmp_path))
+    (tmp_path / "proj.workspace.json").write_text(json.dumps(
+        {"components": [{"exclude": ["docs/tools/", "defrost-memory"]}]}))
+    assert docsync._excluded("docs/tools/extract_facts.py", "proj")
+    assert docsync._excluded("defrost-memory/notes/a.md", "proj")
+    assert not docsync._excluded("docs/toolsmith.py", "proj")
+    assert not docsync._excluded("src/app.py", "proj")
+    assert not docsync._excluded("docs/tools/x.py", None)
+
+
+def test_status_nests_the_notes_domain(monkeypatch, capsys):
+    from defrost_ai import cli, project_setup
+    rows = [{"domain": "app", "counts": {"sections": 5, "doc_code_links": 2}, "built_at": "2026-10-02T02:51",
+             "stale": False, "triggers": []},
+            {"domain": "app-context", "counts": {"docs": 2}, "built_at": None, "stale": True}]
+    monkeypatch.setattr(project_setup, "status", lambda *a, **k: rows)
+    cli.main(["status"])
+    out = capsys.readouterr().out
+    assert "app-context" not in out and "notes and decisions: 2 files" in out

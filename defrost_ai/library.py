@@ -17,6 +17,7 @@ from pathlib import Path
 
 from defrost_ai.config import Workspace
 from defrost_ai.memory import Memory, Models
+from defrost_ai.retrieval import policy
 
 
 def home() -> Path:
@@ -73,8 +74,13 @@ class Library:
         names = domains or [n for n, d in self.domains().items() if d["built"]]
         return [h | {"file": p} for n in names for p in paths for h in self.memory(n).docs_for(p)]
 
-    def search(self, query: str, domains: list[str] | None = None, mode: str = "fast", k: int | str = 5,
-               merge: str = "rerank") -> dict:
+    def search(self, query: str, domains: list[str] | None = None, mode: str | None = None, k: int | str = 5,
+               merge: str | None = None) -> dict:
+        """mode: "accurate" (default, set in `defrost config`) or "fast"; expert modes are accepted too.
+        Results of several domains are merged by the reranker in accurate mode, by rank fusion in fast mode."""
+        from defrost_ai.memory import _default_mode
+        mode = mode or _default_mode()
+        merge = merge or ("rerank" if policy.normalize(mode) in ("accurate", "rerank", "all") else "rrf")
         names = domains or [n for n, d in self.domains().items() if d["built"]]
         if not names:
             raise RuntimeError("no built domains; run `defrost build <workspace.json> --domain NAME` first")

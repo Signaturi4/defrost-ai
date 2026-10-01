@@ -33,7 +33,7 @@ QUESTION = (
     "(`path:Lstart-end`, what it says) and the code (`path:line`, what it does). Then ask with AskUserQuestion, one "
     "question per conflict (header \"Conflict\"), options: \"Code is right: update the doc\", \"Doc is right: the "
     "code is a bug\", \"Not a conflict\", \"Not sure: mark as open question\". Record the answer with "
-    "`memory_resolve_conflict`, then act on it: update the doc; or report the bug without changing code unless asked; "
+    "`remember(kind='decision')`, then act on it: update the doc; or report the bug without changing code unless asked; "
     "or nothing; or add an open-question note to the section. Until the user answers, state both versions and present "
     "neither as fact. Hits with a `resolved:` line were already decided: follow that decision and do not ask again. "
     "Without an interactive user (e.g. `claude -p`), list them under **Doc/code conflicts: needs your decision**.")

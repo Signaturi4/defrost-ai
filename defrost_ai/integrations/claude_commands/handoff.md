@@ -1,8 +1,8 @@
 ---
 description: Save a handoff note to the project memory so you can /clear and continue with a small context
-allowed-tools: mcp__defrost__memory_handoff, mcp__defrost__memory_brief
+allowed-tools: mcp__defrost__remember, Bash(defrost note:*)
 ---
-Write a handoff note for the current work with the `memory_handoff` tool, then tell the user they can run `/clear`.
+Write a handoff note for the current work with `remember(kind="note", ...)` (no tool: `defrost note "goal" --state ... --next ... --why ... --file ...`), then tell the user they can run `/clear`.
 $ARGUMENTS
 
 Fill it from this conversation, briefly and concretely. The next session sees only this note, CLAUDE.md and the

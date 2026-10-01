@@ -3,7 +3,7 @@
     from defrost_ai import Memory, Models
     models = Models()                                   # loads Defrost-Ret-B (+ Defrost-Rerank lazily); share across memories
     mem = Memory("~/.defrost-ai/acme", models)
-    result = mem.search("how does the feed reach mobile", mode="fast", k=5)
+    result = mem.search("how does the feed reach mobile", mode="accurate", k=5)   # or mode="fast"
     print(mem.context(result))                          # cited context pack for an LLM
 
 Every hit is a section of a document, quoted verbatim with path and line range, plus the code nodes it names
@@ -24,6 +24,11 @@ from defrost_ai.retrieval import keyword, policy
 
 PATH_OR_CALL = re.compile(r"(?:[\w.-]+/)*[\w.-]+\.(?:py|ts|tsx|js|jsx|mjs|go|rs|rb|java|kt|swift|sh|ya?ml|toml|sql|tf)"
                           r"|[A-Za-z_][\w.]*\(\)")
+
+
+def _default_mode() -> str:
+    from defrost_ai import settings
+    return settings.get("search.mode")
 
 
 class Models:
@@ -88,10 +93,12 @@ class Memory:
         scores = self.models.reranker.score(query, [f"{s['heading_path']}\n{s['text']}" for s in secs])
         return {s: float(v) for s, v in zip(pool, scores)}
 
-    def search(self, query: str, mode: str = "fast", k: int | str = 5, qvec: np.ndarray | None = None) -> dict:
+    def search(self, query: str, mode: str | None = None, k: int | str = 5, qvec: np.ndarray | None = None) -> dict:
         """-> {"query", "mode", "mode_used", "k", "hits": [...], "timing_ms"}. k="auto": adaptive k (1-5) from the
         calibrated dense confidence (policy.auto_k)."""
         t0 = time.time()
+        asked = mode or _default_mode()
+        mode = policy.normalize(asked)                  # accurate | fast -> internal policy
         bm25, dense, cos = self.candidates(query, qvec)
         t1 = time.time()
         scores = self.rerank_scores(query, bm25, dense) if policy.needs_reranker(mode, bm25, dense) else None
@@ -112,7 +119,7 @@ class Memory:
                          "lines": [s["line_start"], s["line_end"]], "heading": s["heading_path"], "text": s["text"],
                          "rerank_score": None if scores is None else scores.get(sid), "cosine": cos.get(sid),
                          "code": code, "verify": verify, "stale": stale, "missing": missing, "doc_trust": level})
-        return {"query": query, "mode": mode, "mode_used": used, "k": k, "hits": hits,
+        return {"query": query, "mode": asked, "mode_used": used, "k": k, "hits": hits,
                 "timing_ms": {"first_stage": round(1000 * (t1 - t0)), "rerank": round(1000 * (t2 - t1))}}
 
     def grounding(self, sid: str, doc_path: str, n: int = 4) -> tuple[list[str], list[dict]]:

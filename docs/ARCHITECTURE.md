@@ -12,7 +12,7 @@ meaning the trained retriever and reranker plus the index they search. The rest 
                                 │ extract() per component (same AST, same cache)          │ HTTP (stdlib client)
   docs  ──────► ┌───────────────▼──────────────────────────────── defrost ──────────────┴─────────────────────┐
                 │ builder: sections (md/rst/adoc) ─► doc→code links ─► Defrost-Ret-B vectors (cached by text hash)   │
-                │ retrieval: BM25 (FTS5) + Defrost-Ret-B dense ─► fast policy ─► Defrost-Rerank on disagreement          │
+                │ retrieval: BM25 (FTS5) + Defrost-Ret-B dense ─► accurate mode ─► Defrost-Rerank on disagreement        │
                 │ library: many domains, cross-domain merge by Defrost-Rerank      service: resident models (HTTP)  │
                 └───────────────▲─────────────────────────────────────────────────────────────────────────────────┘
                                 │ client.search / client.update
@@ -31,7 +31,7 @@ meaning the trained retriever and reranker plus the index they search. The rest 
 | refresh on commit / branch switch | graphify `hook install` (post-commit, post-checkout) | one call after graphify's own rebuild, gated by `graphify-out/defrost.json` |
 | CLI | graphify | `graphify memory ...` subcommand |
 | sandboxed agents, reviewable results, revert | Shepherd tasks + retained outputs | two tasks: `record_memory_snapshot`, `answer_from_memory` |
-| text retrieval | **defrost** (replaces graphify's token-costing semantic tier for docs) | Defrost-Ret-B + Defrost-Rerank + BM25, `fast` policy |
+| text retrieval | **defrost** (replaces graphify's token-costing semantic tier for docs) | Defrost-Ret-B + Defrost-Rerank + BM25, `accurate` mode |
 
 ## Why a resident service
 
