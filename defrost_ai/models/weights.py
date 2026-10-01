@@ -21,6 +21,7 @@ from pathlib import Path
 
 BASE_MODEL = "Qwen/Qwen2.5-0.5B"
 BASE_REVISION = "060db6499f32faf8b98477b0a26969ef7d8b9987"
+ENCODER_ID = "defrost-ret-b"   # stored with the section vectors: keep stable
 RETRIEVAL_INSTRUCTION = ("Given a developer question about a software project, retrieve the documentation passage that "
                          "answers it")
 

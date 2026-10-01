@@ -1,5 +1,6 @@
 """Session handoff notes: no models, no service (CI-safe)."""
 import json
+from pathlib import Path
 import subprocess
 import sys
 
@@ -75,6 +76,7 @@ def test_brief_cli_is_fast_and_model_free(home):
     code = ("import sys; from defrost_ai.cli import main; main(['brief']); "
             "print('torch' in sys.modules, 'transformers' in sys.modules)")
     r = subprocess.run([sys.executable, "-c", code], cwd=repo, capture_output=True, text=True,
-                       env={**__import__("os").environ, "DEFROST_HOME": str(tmp / "km")})
+                       env={**__import__("os").environ, "DEFROST_HOME": str(tmp / "km"),
+                            "PYTHONPATH": str(Path(__file__).resolve().parents[1])})
     assert "goal for cli" in r.stdout
     assert r.stdout.strip().endswith("False False")

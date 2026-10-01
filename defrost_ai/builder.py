@@ -24,7 +24,7 @@ from defrost_ai.config import DOC_SUFFIXES, Workspace, git_head, git_times
 from defrost_ai.ingest.code_graph import build_code_graph
 from defrost_ai.ingest.documents import document_id, split_sections
 from defrost_ai.ingest.links import core_paths, link_section, symbol_index
-from defrost_ai.models.encoder import ENCODER_ID
+from defrost_ai.models.weights import ENCODER_ID
 
 
 EMBED_CHUNK = 16                       # sections per model call: a search waits at most one chunk during a build

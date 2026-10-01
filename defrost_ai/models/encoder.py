@@ -8,9 +8,8 @@ import numpy as np
 import torch
 
 from defrost_ai.models.backbone import bidirectional_mask, load_backbone, load_tokenizer
-from defrost_ai.models.weights import RETRIEVAL_INSTRUCTION, adapter_dir, device as pick_device, models_dir
+from defrost_ai.models.weights import ENCODER_ID, RETRIEVAL_INSTRUCTION, adapter_dir, device as pick_device, models_dir
 
-ENCODER_ID = "defrost-ret-b"
 
 
 class DefrostRetriever:
