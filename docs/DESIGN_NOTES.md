@@ -40,7 +40,10 @@ The embedding model is **Kev-Ret-B**, trained for this project:
   is left out of the pooling.
 
 Kev-Ret-B works next to BM25 (SQLite FTS5). **Kev-Rerank** (same backbone + LoRA + a score head, a cross-encoder)
-reorders the candidates when BM25 and Kev-Ret-B disagree on the top section (the `fast` policy).
+reorders the candidates when BM25 and Kev-Ret-B disagree on the top section (the `fast` policy). The shipped version is
+**Kev-Rerank v2** (weights v1.1.0). It was trained with harder negatives: other sections of the same file, and
+changelog / release-note sections that mention the same names. It also added long-prose questions. On the locked
+test it beats v1 by +0.024 nDCG@10 in `fast` mode ([RESULTS.md](RESULTS.md) §2.2).
 
 Can a bigger backbone be dropped in? No. The adapters are shaped for the 0.5B model (hidden size 896, 24 layers),
 while Qwen2.5-1.5B has hidden size 1536 and 28 layers, so they do not load on it. Without our training, neither

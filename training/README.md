@@ -9,7 +9,7 @@ The recipe follows KG-BiLM / LLM2Vec: MNTP, then CGSA, then a supervised stage.
 
 ```
 Qwen2.5-0.5B ─► 1 MNTP ─► 2 CGSA ─┬─► 3 Kev-Ret-B    (dense retriever)
-  (causal)       LoRA      LoRA    └─► 4 Kev-Rerank   (cross-encoder + score head)
+  (causal)       LoRA      LoRA    └─► 4 Kev-Rerank   (cross-encoder + score head; 4b = v2, shipped)
 ```
 
 | stage | output (models/) | script | config | hardware |
@@ -58,6 +58,18 @@ Qwen2.5-0.5B ─► 1 MNTP ─► 2 CGSA ─┬─► 3 Kev-Ret-B    (dense retr
 - 16 groups per step, 1500 steps, lr 1e-4 (LoRA) and 1e-3 (head).
 - Validation top-1 0.934.
 
+**4b. Kev-Rerank v2** (shipped since weights v1.1.0; config `configs/kev_rerank_v2_as_trained.json`)
+- Warm start from Kev-Rerank v1 (LoRA + head), then 800 steps at lr 3e-5 (head 3e-4), 50 warmup steps, Kaggle 2×T4.
+- Data (`source/kev_graph/bilm/rerank_v2_data.py`): 22.5k groups. These are v1's tech-doc questions plus
+  617 changelog questions and 932 long-prose questions, with public replay (MS MARCO, NQ, HotpotQA,
+  StackExchange, Quora, AllNLI). Claude Haiku wrote the new changelog and prose questions from the sections; a
+  13-gram gate drops any that overlap the eval suites.
+- Negatives: up to 2 same-file siblings and 2 changelog / release-note sections per question, ranked by BM25; the
+  rest are v1's BM25 negatives. `rerank_v2_filter.py` drops negatives that Kev-Ret-B scores at 0.95× the positive or
+  higher, as likely false negatives.
+- Validation top-1: 0.906 on the new 224-item set (v1: 0.880), 0.938 on v1's set (v1: 0.934).
+- Locked test vs v1: `fast` +0.024 [+0.010, +0.041], `rerank` +0.037 [+0.019, +0.056] nDCG@10 (docs/RESULTS.md §2.2).
+
 ## Tried and not shipped
 
 These are kept for reference.
@@ -73,7 +85,11 @@ modal run modal_bilm_app.py::bilm --kmp-config kmp_techdoc_modal.json --cgsa-con
 python -m kev_graph.bilm.kaggle.build_dataset && kaggle kernels push -p ...   # stage 2 on Kaggle
 python -m kev_graph.bilm.sup_data build_v2 ...          # stage 3 data
 python -m kev_graph.bilm.kaggle.sup_bundle --arm B --steps 1000 && kaggle kernels push -p ../kaggle_kernels/kernel-sup
-kaggle kernels push -p ../kaggle_kernels/kernel-rerank # stage 4
+kaggle kernels push -p ../kaggle_kernels/kernel-rerank # stage 4 (v1)
+python -m kev_graph.bilm.rerank_v2_data prose && python -m kev_graph.bilm.rerank_v2_data changelog_questions
+python -m kev_graph.bilm.rerank_v2_data candidates && python -m kev_graph.bilm.rerank_v2_filter
+python -m kev_graph.bilm.rerank_v2_data build             # stage 4b data (prose/changelog questions call `claude -p`)
+kaggle kernels push -p ../kaggle_kernels/kernel-rerank-v2  # stage 4b (needs v1 as init-rerank-v1 in the dataset)
 python ../../scripts/export_weights.py --from <runs dir>
 ```
 

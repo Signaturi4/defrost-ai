@@ -63,6 +63,8 @@ def split_sections(text: str, suffix: str = ".md", max_words: int = MAX_WORDS):
 
     def flush(end):
         body = "\n".join(cur).strip()
+        if cur and HEADING.match(cur[0]) and not "\n".join(cur[1:]).strip():
+            return                                           # heading only: its children carry it in their path
         if body:
             out.append((len(stack), [h for _, h in stack], start, end, body))
 

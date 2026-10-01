@@ -14,9 +14,10 @@ Protocol details live in [EVALUATION.md](EVALUATION.md); raw outputs are in `../
 | Does it beat the plain BM25 Text KB on locked test data? | **Yes.** nDCG@10 +0.097 (held-out repos) and +0.120 (private product repos), both 95% CIs above 0. RAGAS NVIDIA mean +0.100 [+0.054, +0.148]. |
 | Is the gain from our own models? | **Yes.** The whole stack is our fine-tuned Qwen2.5-0.5B: Kev-Ret-B + Kev-Rerank, no third-party retriever or reranker. |
 | Best single mode? | **`rerank`** is the most accurate on RAGAS (0.891 on test). |
-| Default mode? | **`fast`**. It matches rerank on nDCG@10 (0.814 vs 0.802 on test) and trails it slightly on RAGAS (−0.012, n.s.), while calling the reranker on only 46–57% of queries. It has no fitted parameters. |
+| Which reranker ships? | **Kev-Rerank v2** (weights v1.1.0). On the locked test it beats v1 by +0.024 [+0.010, +0.041] nDCG@10 in `fast` mode and +0.037 [+0.019, +0.056] in `rerank` mode (n = 175, paired). See §2.2. |
+| Default mode? | **`fast`**. With v1 it matched rerank on nDCG@10 (0.814 vs 0.802 on test; with v2: 0.838 vs 0.839) and trails it slightly on RAGAS (−0.012, n.s.), while calling the reranker on only 46–57% of queries. It has no fitted parameters. |
 | Is the package the same system that was evaluated? | **Yes.** On held-out dev the parity check passes: identical sections, identical BM25, dense and rerank rankings on 44/44 questions, identical nDCG@10 for every mode. |
-| Main weaknesses | (1) the dense retriever alone loses to BM25 on private product docs; (2) reranking is slow on a laptop (6–9 s/query on MPS); (3) the reranker trails a much larger public reranker on books; (4) multi-hop is unsolved; (5) ~50% of fast queries still pay rerank latency. |
+| Main weaknesses | (1) the dense retriever alone loses to BM25 on private product docs; (2) reranking is slow on a laptop (6–9 s/query on MPS); (3) the reranker trails a much larger public reranker on books (0.902 vs 0.949); (4) multi-hop is unsolved; (5) ~50% of fast queries still pay rerank latency. |
 
 ---
 
@@ -40,6 +41,25 @@ Paired bootstrap, 95% CI:
 | fast vs rerank | +0.014 [−0.004, +0.034] | +0.010 [−0.024, +0.043] | +0.012 [−0.005, +0.030] |
 
 Pre-registered pass criteria (written before the test was read): all passed.
+
+### 2.2 Kev-Rerank v2 vs v1 (locked test, scored once on 2026-10-01)
+
+Same candidate pools, only the reranker differs. The table in §2.1 is v1.
+
+| test set | n | `rerank` v1 → v2 | `fast` v1 → v2 | `all` v1 → v2 |
+|---|---|---|---|---|
+| held-out OSS repos | 106 | 0.800 → **0.846** (+0.046 [+0.021, +0.073]) | 0.814 → **0.840** (+0.027 [+0.006, +0.050]) | 0.851 → 0.854 |
+| private product repos | 69 | 0.804 → **0.829** (+0.025 [−0.001, +0.054]) | 0.814 → **0.835** (+0.021 [+0.004, +0.042]) | 0.794 → 0.789 |
+| all | 175 | 0.802 → **0.839** (+0.037 [+0.019, +0.056]) | 0.814 → **0.838** (+0.024 [+0.010, +0.041]) | 0.829 → 0.828 |
+
+Dev (`rerank`): held-out 0.870 → 0.890, private 0.828 → 0.832, books 0.862 → 0.902, long-prose dev (47 new
+questions from 6 prose-heavy repos) 0.772 → 0.805. No suite got worse in a mode that uses the reranker.
+
+Training: warm start from v1, 800 steps on Kaggle 2×T4, lr 3e-5 (head 3e-4). There are 22.5k training examples:
+9.7k tech-doc, 617 changelog, 932 prose and public replay. Each tech-doc question gets up to 2 same-file siblings
+and 2 changelog / release-note sections as negatives, ranked by BM25. Negatives that Kev-Ret-B scores at 0.95× the
+positive or higher are dropped as likely false negatives. In-training validation (224 items): v2 set top-1
+0.880 → 0.906, v1 set 0.934 → 0.938.
 
 ### 2.2 RAGAS, NVIDIA metrics
 
@@ -82,7 +102,8 @@ What this means in practice:
 | reranker | held-out dev | private dev | books |
 |---|---|---|---|
 | none (BM25) | 0.711 | 0.678 | 0.804 |
-| **Kev-Rerank (0.5B, ours)** | **0.870** | 0.828 | 0.862 |
+| Kev-Rerank v1 (0.5B, ours) | 0.870 | 0.828 | 0.862 |
+| **Kev-Rerank v2 (0.5B, ours, default)** | **0.890** | 0.832 | 0.902 |
 | bge-reranker-base (278M) | 0.717 | 0.837 | 0.907 |
 | bge-reranker-v2-m3 (568M) | 0.835 | **0.843** | **0.949** |
 
@@ -94,7 +115,8 @@ What this means in practice:
 | bge-small | 0.829 | |
 | Kev-Ret-B dense | 0.855 | |
 | Kev-Ret-B hybrid | 0.859 | +0.055 vs BM25, CI > 0 |
-| Kev-Ret-B + Kev-Rerank | 0.862 | |
+| Kev-Ret-B + Kev-Rerank v1 | 0.862 | |
+| Kev-Ret-B + Kev-Rerank v2 | 0.902 | long-prose training questions; +0.040 [+0.007, +0.084] vs v1 |
 | `all` (equal-weight fusion) | 0.903 | best of our modes here; best on multi-hop (0.895) |
 | + bge-reranker-v2-m3 | 0.949 | reference ceiling |
 | + section-graph expansion (+kg) | no gain | |
@@ -153,7 +175,8 @@ RAGAS on books (nv_mean): BM25 0.872, dense 0.917, hybrid 0.923, rerank 0.908, f
   0.667 vs 0.684 on test. Do not use `mode=dense` there; `fast` / `rerank` fix it (0.81).
 - **Latency.** Kev-Rerank takes about 6.5–9.5 s/query on Apple MPS for 40 candidates. BM25 takes 10–30 ms and dense 0.3–0.4 s.
   `fast` avoids the reranker on about half of queries, but its tail latency is still the reranker's.
-- **Versus bigger rerankers on books.** bge-reranker-v2-m3 (568M) scores 0.949 vs our 0.862: long narrative prose is outside our training mix.
+- **Versus bigger rerankers on books.** bge-reranker-v2-m3 (568M) scores 0.949 vs our 0.902 (v1: 0.862). v2 added 932
+  long-prose questions, which closed about half of the gap.
 - **Multi-hop.** Graph expansion and query decomposition did not help. `all` fusion did best (0.895, n = 7), which is too few questions to trust.
 - **RAGAS gain on private repos is not significant** (+0.052, CI crosses 0), even though nDCG is (+0.120).
 - **Mode instability.** `all` swung from −0.050 (dev) to +0.027 (test) vs rerank, so it is not the default.
@@ -192,9 +215,14 @@ RAGAS on books (nv_mean): BM25 0.872, dense 0.917, hybrid 0.923, rerank 0.908, f
    - Use `rerank` when answer quality matters more than latency.
    - Use `bm25` for exact strings or error messages.
    - Avoid `dense`-only on private or internal notes.
-2. **Next model work, in order of expected value.**
-   - Kev-Rerank v2 with same-file sibling and changelog hard negatives.
-   - Longer-prose training data for books-style corpora.
-   - Adaptive k from the calibrated dense confidence.
-   - A 1.5B backbone.
+2. **Model work.** Done on 2026-10-01:
+   - Kev-Rerank v2 with same-file sibling and changelog hard negatives (§2.2; now the default).
+   - Longer-prose training data for books-style corpora (part of v2; books 0.862 → 0.902).
+   - Adaptive k from the calibrated dense confidence (`k="auto"`).
+   - A 1.5B backbone: tested, not a drop-in. The adapters do not fit Qwen2.5-1.5B (hidden 1536, 28 layers), and the raw
+     1.5B model scores 0.027 nDCG@10 on held-out dev against 0.885 for Kev-Ret-B, so it means retraining all four
+     stages ([DESIGN_NOTES.md](DESIGN_NOTES.md)).
+
+   Next, in order of expected value: RAGAS re-run with v2, a FAQ-style eval with unanswerable questions
+   ([FAQ_CHATBOT.md](FAQ_CHATBOT.md)), reranker latency.
 3. **Latency.** Batch or quantize the reranker, or run it on CUDA. The MPS figures above are the worst case.

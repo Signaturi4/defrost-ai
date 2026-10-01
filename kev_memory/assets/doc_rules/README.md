@@ -14,7 +14,8 @@ bash templates/doc-rules/install.sh /path/to/your/project
 
 The installer:
 - copies `DOC_RULES.md` → `docs/DOC_RULES.md` (the full rules; read only when writing docs);
-- creates `docs/GLOSSARY.md` from the template (if it does not exist yet);
+- copies the glossary template to `docs/templates/` (you create `docs/GLOSSARY.md` from it with the first term, so
+  no placeholder page gets indexed);
 - copies `PAGE.template.md` → `docs/templates/` and the tools → `docs/tools/`;
 - appends a 13-line, highlighted rule block to the **end** of `CLAUDE.md`.
 
@@ -34,7 +35,7 @@ Do not `@import` them: an import loads them into every session.
 |---|---|---|
 | `CLAUDE.snippet.md` | end of `CLAUDE.md` | the highlighted, always-loaded rule block |
 | `DOC_RULES.md` | `docs/DOC_RULES.md` | the full rules: pages, sections, names, sentences, tables, Facts |
-| `GLOSSARY.template.md` | `docs/GLOSSARY.md` | canonical names + aliases, and the allowed Facts relations |
+| `GLOSSARY.template.md` | `docs/templates/` → `docs/GLOSSARY.md` | canonical names + aliases, and the allowed Facts relations |
 | `PAGE.template.md` | `docs/templates/` | starting point for a new page (frontmatter, section, table, Facts) |
 | `tools/doc_lint.py` | `docs/tools/` | checks frontmatter, section length, opening pronouns, long sentences, un-backticked identifiers, Facts syntax |
 | `tools/extract_facts.py` | `docs/tools/` | turns Facts blocks into JSONL triples (with code identifiers flagged) |

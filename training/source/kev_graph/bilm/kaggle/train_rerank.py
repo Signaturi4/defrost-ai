@@ -71,20 +71,27 @@ class Scorer(torch.nn.Module):
         return self.head(self.norm(v.float())).squeeze(-1)
 
 
-def build(base, mntp, grad_ckpt=True, cgsa=None):
-    from peft import LoraConfig, get_peft_model
+def build(base, mntp, grad_ckpt=True, cgsa=None, init_from=None):
+    from peft import LoraConfig, PeftModel, get_peft_model
     from transformers import AutoModel
     from kev_graph.bilm.bridge import _merge
     m = _merge(AutoModel.from_pretrained(base, dtype=torch.float32, attn_implementation="sdpa"), mntp)
     if cgsa:
         m = _merge(m, cgsa)
-    m = get_peft_model(m, LoraConfig(r=16, lora_alpha=32, lora_dropout=0.05, bias="none",
-                                     target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj",
-                                                     "down_proj"]))
+    if init_from:                          # warm start: continue the LoRA of a trained reranker (v2 from v1)
+        m = PeftModel.from_pretrained(m, init_from, is_trainable=True)
+    else:
+        m = get_peft_model(m, LoraConfig(r=16, lora_alpha=32, lora_dropout=0.05, bias="none",
+                                         target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj",
+                                                         "down_proj"]))
     if grad_ckpt:
         m.base_model.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
         m.base_model.model.enable_input_require_grads()
-    return Scorer(m, m.config.hidden_size)
+    sc = Scorer(m, m.config.hidden_size)
+    if init_from:
+        h = torch.load(Path(init_from) / "head.pt", map_location="cpu")
+        sc.norm.load_state_dict(h["norm"]); sc.head.load_state_dict(h["head"])
+    return sc
 
 
 def group_batch(groups, enc, device):
@@ -127,6 +134,7 @@ def main(argv=None):
     ap.add_argument("--save_every", type=int, default=250)
     ap.add_argument("--eval_every", type=int, default=250)
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--init_from", default=None, help="adapter dir with head.pt of a trained reranker (warm start)")
     args = ap.parse_args(argv)
     if "RANK" in os.environ:
         dist.init_process_group("nccl" if torch.cuda.is_available() else "gloo")
@@ -140,9 +148,11 @@ def main(argv=None):
     out = Path(args.out); out.mkdir(parents=True, exist_ok=True)
     train = [json.loads(l) for l in open(Path(args.data) / "rerank_train.jsonl")]
     val = [json.loads(l) for l in open(Path(args.data) / "rerank_val.jsonl")][:256]
+    f_v1 = Path(args.data) / "rerank_val_v1.jsonl"          # v2: also track the v1 val set (no forgetting)
+    val_v1 = [json.loads(l) for l in open(f_v1)][:256] if f_v1.exists() else None
     from transformers import AutoTokenizer
     enc = PairEncoder(AutoTokenizer.from_pretrained(args.base), max_doc=args.max_doc)
-    model = build(args.base, args.mntp, cgsa=args.cgsa).to(device)
+    model = build(args.base, args.mntp, cgsa=args.cgsa, init_from=args.init_from).to(device)
     model.train()
     lora = [p for n, p in model.named_parameters() if p.requires_grad and "backbone" in n]
     head = list(model.norm.parameters()) + list(model.head.parameters())
@@ -157,6 +167,9 @@ def main(argv=None):
     rng.shuffle(order)
     local = args.groups // world()
     t0, hist = time.time(), []
+    if args.init_from:
+        log(f"  val@0 (warm start): {validate(model, enc, val, device, dtype)} v1 "
+            f"{validate(model, enc, val_v1, device, dtype) if val_v1 else None}")
     for step in range(args.steps):
         s0 = (step * args.groups) % (len(order) - args.groups)
         idx = order[s0 + rank() * local: s0 + (rank() + 1) * local]
@@ -178,7 +191,9 @@ def main(argv=None):
         if (step + 1) % args.eval_every == 0 or step + 1 == args.steps:
             fp = fingerprint(params)
             rec["val"] = validate(model, enc, val, device, dtype)
-            log(f"  val@{step + 1}: {rec['val']} | replicas {'in sync' if max(fp) - min(fp) < 1e-3 * (abs(fp[0]) + 1) else 'DIVERGED'}")
+            if val_v1:
+                rec["val_v1"] = validate(model, enc, val_v1, device, dtype)
+            log(f"  val@{step + 1}: {rec['val']} v1 {rec.get('val_v1')} | replicas {'in sync' if max(fp) - min(fp) < 1e-3 * (abs(fp[0]) + 1) else 'DIVERGED'}")
         if rank() == 0 and ((step + 1) % args.save_every == 0 or step + 1 == args.steps):
             d = out / ("final" if step + 1 == args.steps else f"step-{step + 1}")
             model.backbone.save_pretrained(d)

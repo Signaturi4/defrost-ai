@@ -29,9 +29,43 @@ def alive() -> bool:
         return False
 
 
+def _build() -> str | None:
+    try:
+        return _call("GET", "/health", timeout=2).get("build")
+    except (urllib.error.URLError, OSError):
+        return None
+
+
+def _stop_by_port(port: str) -> None:
+    """Terminate the local process listening on `port`, but only if it is a kev-memory service."""
+    import signal
+    try:
+        pids = subprocess.run(["lsof", "-tiTCP:" + port, "-sTCP:LISTEN"], capture_output=True, text=True).stdout.split()
+    except OSError:
+        return
+    for pid in pids:
+        cmd = subprocess.run(["ps", "-o", "command=", "-p", pid], capture_output=True, text=True).stdout
+        if "kev-memory" in cmd or "kev_memory" in cmd:
+            os.kill(int(pid), signal.SIGTERM)
+    t0 = time.time()
+    while alive() and time.time() - t0 < 10:
+        time.sleep(0.5)
+
+
 def ensure_service(wait: float = 120) -> None:
     if alive():
-        return
+        from kev_memory import build_id
+        if _build() == build_id() or os.environ.get("KEV_MEMORY_SERVE_CMD"):
+            return                                      # same code, or a service the user manages explicitly
+        try:                                            # upgraded package: restart the old service
+            _call("POST", "/shutdown", {}, timeout=5)
+        except (urllib.error.URLError, OSError):
+            pass
+        t0 = time.time()
+        while alive() and time.time() - t0 < 10:
+            time.sleep(0.5)
+        if alive():                                     # pre-1.1 service without /shutdown: stop it by pid
+            _stop_by_port(URL.rsplit(":", 1)[-1])
     port = URL.rsplit(":", 1)[-1]
     log = open(os.path.expanduser("~/.kev-memory/service.log"), "a") if os.path.isdir(os.path.expanduser("~/.kev-memory")) \
         else subprocess.DEVNULL

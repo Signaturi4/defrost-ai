@@ -30,8 +30,11 @@ nDCG@10:
 
 | test set | BM25 | dense | hybrid | rerank | fast (default) |
 |---|---|---|---|---|---|
-| held-out (106) | 0.703 | 0.803 | 0.799 | 0.800 | 0.814 |
-| private repos (69) | 0.684 | 0.667 | 0.740 | 0.804 | 0.814 |
+| held-out (106) | 0.703 | 0.803 | 0.799 | 0.800 → **0.846** | 0.814 → **0.840** |
+| private repos (69) | 0.684 | 0.667 | 0.740 | 0.804 → **0.829** | 0.814 → **0.835** |
+
+Arrows show Kev-Rerank v1 (weights v1.0.0) → v2 (weights v1.1.0, the default). BM25, dense and hybrid do not use the
+reranker. The claims below were pre-registered and tested with v1.
 
 Pre-registered claim, stack vs BM25:
 - held-out: +0.097 [+0.038, +0.158]
@@ -52,6 +55,23 @@ RAGAS NVIDIA, mean of the three metrics, all 175 test questions:
 - fast vs BM25: +0.088 [+0.042, +0.134]
 - fast vs rerank: −0.012 [−0.032, +0.005]. fast sends 46–57% of queries to the reranker.
 
+RAGAS was run with Kev-Rerank v1 and has not been re-run for v2 (it costs Claude calls).
+
+### Kev-Rerank v2 vs v1 (locked test, read once on 2026-10-01)
+
+v2 continues v1's training (800 steps, lr 3e-5) on 22.5k examples whose negatives add up to two same-file sibling
+sections and two changelog / release-note sections per question (19k sibling and 17k changelog negatives in
+total), plus 932 long-prose questions. Both rerankers score the same candidate pools, so the comparison is paired.
+
+| test set | n | `rerank` v1 → v2 | `fast` v1 → v2 | `all` v1 → v2 |
+|---|---|---|---|---|
+| held-out | 106 | 0.800 → 0.846, +0.046 [+0.021, +0.073] | 0.814 → 0.840, +0.027 [+0.006, +0.050] | 0.851 → 0.854 |
+| private repos | 69 | 0.804 → 0.829, +0.025 [−0.001, +0.054] | 0.814 → 0.835, +0.021 [+0.004, +0.042] | 0.794 → 0.789 |
+| pooled | 175 | **+0.037 [+0.019, +0.056]** | **+0.024 [+0.010, +0.041]** | −0.001 [−0.011, +0.010] |
+
+On dev, v2 gained on every suite: held-out 0.870 → 0.890, private 0.828 → 0.832, books 0.862 → 0.902 and a new
+long-prose suite (47 questions) 0.772 → 0.805 (`rerank`).
+
 ## Dev and other suites (used for choices)
 
 | system | held-out dev | private dev | books | ODEX | DS-1000 |
@@ -60,7 +80,8 @@ RAGAS NVIDIA, mean of the three metrics, all 175 test questions:
 | bge-small-en-v1.5 | – | 0.515 | 0.829 | 0.196 | 0.287 |
 | bge-base-en-v1.5 | 0.799 | – | – | 0.222 | 0.273 |
 | Kev-Ret-B dense | **0.886** | 0.541 | 0.855 | **0.230** | 0.257 |
-| Kev-Ret-B + Kev-Rerank | 0.870 | 0.828 | 0.862 | – | – |
+| Kev-Ret-B + Kev-Rerank v1 | 0.870 | 0.828 | 0.862 | – | – |
+| Kev-Ret-B + Kev-Rerank v2 (default) | **0.890** | 0.832 | 0.902 | – | – |
 | Kev-Ret-B + bge-reranker-v2-m3 (568M, reference) | 0.835 | 0.843 | 0.949 | – | – |
 
 ## What did not work (so it is not in the package)
@@ -77,6 +98,6 @@ RAGAS NVIDIA, mean of the three metrics, all 175 test questions:
 
 - **Private-repo domain gap.** On private product docs, Kev-Ret-B alone scores below BM25: the gold section beats
   every other section in only 41% of questions, against 72–80% elsewhere. The reranker carries this domain.
-- **Books.** Kev-Rerank trails the larger bge-reranker-v2-m3 on books (0.862 vs 0.949).
+- **Books.** Kev-Rerank v2 still trails the larger bge-reranker-v2-m3 on books (0.902 vs 0.949; v1 was 0.862).
 - **Rerank latency.** Kev-Rerank takes about 6–9 s per query on an Apple M-series GPU (MPS) for a 40-section pool,
   against about 0.3–0.4 s for dense. `fast` skips it when BM25 and dense agree.

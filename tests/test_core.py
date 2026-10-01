@@ -16,11 +16,16 @@ def test_markdown_sections_keep_heading_path_and_lines():
 
 
 def test_rst_and_asciidoc_headings_keep_line_numbers():
-    rst = "Title\n=====\n\nSub\n---\ntext\n"
+    rst = "Title\n=====\nintro\n\nSub\n---\ntext\n"
     assert [s[1] for s in split_sections(rst, ".rst")] == [["Title"], ["Title", "Sub"]]
-    assert split_sections(rst, ".rst")[1][2] == 4
+    assert split_sections(rst, ".rst")[1][2] == 5
     adoc = "== Top\na\n=== Child\nb\n"
     assert [s[1] for s in split_sections(adoc, ".adoc")] == [["Top"], ["Top", "Child"]]
+
+
+def test_heading_only_sections_are_skipped():
+    md = "# Guide\n\n## Setup\n\n### Install\nrun it\n"
+    assert [(s[1], s[2]) for s in split_sections(md, ".md")] == [(["Guide", "Setup", "Install"], 5)]
 
 
 def test_doc_to_code_link_is_exact_and_unique():

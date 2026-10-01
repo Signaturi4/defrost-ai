@@ -1,0 +1,18 @@
+{
+ "id": "artemzelenskii/kev-rerank-v2-train",
+ "title": "kev-rerank-v2-train",
+ "code_file": "rerank-v2.ipynb",
+ "language": "python",
+ "kernel_type": "notebook",
+ "is_private": true,
+ "enable_gpu": true,
+ "enable_tpu": false,
+ "enable_internet": true,
+ "dataset_sources": [
+  "artemzelenskii/kev-rerank-v2"
+ ],
+ "kernel_sources": [],
+ "competition_sources": [],
+ "model_sources": [],
+ "machine_shape": "NvidiaTeslaT4"
+}

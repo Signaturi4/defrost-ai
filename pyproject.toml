@@ -32,3 +32,4 @@ include = ["kev_memory*"]
 
 [tool.setuptools.package-data]
 "kev_memory.integrations.claude_commands" = ["*.md"]
+"kev_memory.assets" = ["doc_rules/*", "doc_rules/tools/*"]

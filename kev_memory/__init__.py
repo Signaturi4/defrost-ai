@@ -2,7 +2,17 @@
 
 Imports are lazy so the stdlib-only parts (kev_memory.service.client, the Shepherd integration) work in an
 environment without torch."""
-__version__ = "1.0.0"
+__version__ = "1.1.0"
+
+
+def build_id() -> str:
+    """Version + hash of the package sources: a running service with a different build id is restarted by clients."""
+    import hashlib
+    from pathlib import Path
+    h = hashlib.sha1(__version__.encode())
+    for f in sorted(Path(__file__).parent.rglob("*.py")):
+        h.update(f.read_bytes())
+    return f"{__version__}+{h.hexdigest()[:10]}"
 __all__ = ["build", "rollback", "Library", "register", "Memory", "Models"]
 
 

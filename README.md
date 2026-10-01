@@ -48,7 +48,7 @@ sends your code out. This project trains small models instead (a 0.5B-parameter 
 | **Qwen2.5-0.5B** (rev `060db649`) | Alibaba Qwen, Apache-2.0 | the backbone of both models |
 | **MNTP + CGSA** recipe (KG-BiLM / LLM2Vec) | McGill NLP, MIT (`training/source/kg_bilm_experiments`) | turning the causal decoder into a bidirectional text encoder: masked next-token prediction, then contrastive sentence alignment |
 | **Kev-Ret-B** (ours) | LoRA r16 on the backbone, contrastive training on 57k (query, passage, hard negative) rows: MS MARCO, NQ, HotpotQA, AllNLI, Quora, StackExchange + 9.7k tech-doc questions | dense retrieval of doc sections |
-| **Kev-Rerank** (ours) | same backbone + LoRA + score head, listwise loss over 1 positive + 7 BM25 negatives | reordering the top 40 candidates |
+| **Kev-Rerank v2** (ours) | same backbone + LoRA + score head, listwise loss over 1 positive + 7 negatives (BM25, same-file siblings, changelog sections) | reordering the top 40 candidates |
 | **SQLite FTS5 BM25** | SQLite | keyword retrieval: exact identifiers, flags, error strings |
 | **`fast` policy** (ours) | no parameters | uses the cheap fusion when BM25 and the dense retriever agree on the top section, the reranker when they disagree (about half the queries) |
 | **adaptive k** (ours, optional `k="auto"`) | temperature-scaled dense confidence | sends 1–5 sections: 18% fewer context tokens at the same hit rate |
@@ -63,7 +63,7 @@ What is different from the parts it is built on:
   than replacing them.
 - **Off-the-shelf embedders** (bge-small and similar) are trained on web text. Kev-Ret-B starts from a backbone
   adapted to technical prose and is trained on developer questions about documentation. Same-sized rerankers
-  trained on web data scored lower on our held-out repos (0.717 for bge-reranker-base vs 0.870).
+  trained on web data scored lower on our held-out repos (0.717 for bge-reranker-base vs 0.890 for Kev-Rerank v2).
 
 ## Results
 
@@ -76,8 +76,12 @@ Full protocol: [docs/EVALUATION.md](docs/EVALUATION.md). Everything that worked 
 
 | | held-out repos (106) | private product repos (69) |
 |---|---|---|
-| nDCG@10, BM25 → `fast` | 0.703 → **0.814** | 0.684 → **0.814** |
-| RAGAS nv_mean (both), BM25 → `fast` | 0.791 → **0.879** | |
+| nDCG@10, BM25 → `fast` | 0.703 → **0.840** | 0.684 → **0.835** |
+| RAGAS nv_mean (both), BM25 → `fast` (Kev-Rerank v1) | 0.791 → **0.879** | |
+
+Kev-Rerank v2 (default since weights v1.1.0) against v1 on the same locked test, paired: `fast` +0.024
+[+0.010, +0.041], `rerank` +0.037 [+0.019, +0.056]. The RAGAS row and the graphify comparison below were run with
+v1; they were not re-run.
 
 **End to end vs stock graphify, on three repos never used in training** (uvicorn, cattrs, structlog; 100 paired
 doc + code questions; [docs/E2E_GRAPHIFY.md](docs/E2E_GRAPHIFY.md)):
@@ -99,35 +103,61 @@ answers come from: instructions keep their conditions and exceptions in paragrap
 [docs/DESIGN_NOTES.md](docs/DESIGN_NOTES.md), which also describes the embedding model.
 
 **Known weaknesses:** the dense retriever alone loses to BM25 on private product docs; the reranker takes 6–9 s
-per query on Apple GPU; a 568M public reranker beats ours on long narrative prose (books 0.949 vs 0.862);
+per query on Apple GPU; a 568M public reranker still beats ours on long narrative prose (books 0.949 vs 0.902);
 multi-hop questions are unsolved.
 
 ## Quick start
 
+One command installs the CLI, downloads the weights and registers the Claude Code integration for all projects:
+
 ```sh
-pip install -e ".[code]"                 # torch, transformers, peft + graphify's AST extractor
-kev-memory verify-weights                # models/ adapters against models/MANIFEST.json (see "Weights")
-
-# graphify with the memory integration (patch on v0.4.32)
-git clone https://github.com/safishamsi/graphify && cd graphify && git checkout v0.4.32 \
-  && git apply ../defrost-ai/integrations/graphify/graphify-0.4.32-kev-memory.patch && pip install -e ".[mcp]"
-export KEV_MEMORY_SERVE_CMD="kev-memory serve"
-
-cd ~/src/my-repo
-graphify memory init . --domain my-repo  # build the memory (stored in ~/.kev-memory/my-repo, never in the repo)
-graphify hook install                    # refresh after every commit / checkout
-graphify claude install                  # CLAUDE.md rules, incl. "use memory_search for how/why questions"
-graphify memory search "how are refunds issued?" -k auto
-claude mcp add graphify -- python -m graphify.serve graphify-out/graph.json
+curl -fsSL https://raw.githubusercontent.com/Signaturi4/defrost-ai/main/install.sh | sh
 ```
+
+It needs [uv](https://docs.astral.sh/uv/). It installs `kev-memory` as a uv tool (Python 3.12), fetches the
+adapters (about 140 MB, checked by sha256) to `~/.cache/kev-memory`, and runs `kev-memory claude install --user`.
+
+Then open Claude Code in any repository and type:
+
+```
+/defrost-setup
+```
+
+Claude asks how the memory should stay fresh and builds it. The default is the recommended one: **build now, then
+refresh on every merge or commit to main that changes a doc or code file**. You never run a build by hand.
+
+| refresh option | what it installs | when it runs |
+|---|---|---|
+| Build now + on every merge/commit to main (Recommended) | `post-merge` + `post-commit` git hooks (marked block, your own hooks are kept) | after a merge or commit on `main`/`master`, only if an indexed file changed |
+| Every few hours (2 / 6 / 24 h) | a launchd agent on macOS, a crontab line on Linux | on the schedule, only if something changed |
+| When a Claude session starts | a `SessionStart` hook in `.claude/settings.json` | at session start, in the background, only if stale |
+| Only when I run `/memory-update` | nothing | on demand |
+
+Every trigger runs `kev-memory refresh <domain> --if-changed` in the background, so commits and sessions do
+not wait. Refreshes are incremental (only new or edited sections are re-embedded) and log to
+`~/.kev-memory/<domain>.refresh.log`. The memory lives in `~/.kev-memory/<domain>`, never in your repo.
+Indexing follows `.gitignore`, so ignored folders (archives, data dumps, `node_modules`) stay out.
+Setup also adds a four-line "Project memory" block to `CLAUDE.md` that tells Claude to call `memory_search` for
+how/why questions. Without it, agents in our evals mostly ignored the MCP tools.
+
+The same setup without Claude:
+
+```sh
+kev-memory setup . --build now --on-main-merge          # + --every-hours 6, --claude-hook, --doc-rules, --claude
+kev-memory status                                       # per domain: built_at, counts, stale (and why), triggers
+kev-memory refresh my-repo --if-changed                 # what the triggers run
+kev-memory setup . --remove-triggers                    # remove hooks, schedule and session hook
+```
+
+Upgrade: run the install line again (it reinstalls; the resident service restarts itself on the new build).
 
 ## Use with Claude (MCP server + slash commands)
 
-No graphify needed for this path. One command registers the MCP server and installs four slash commands:
+`install.sh` already did this for all projects. To do it for one project only (commands in `.claude/commands`,
+server in `.mcp.json`, so the team gets it from git):
 
 ```sh
-pip install -e ".[mcp]"
-kev-memory claude install .          # this project: .claude/commands + .mcp.json   (--user: all projects)
+kev-memory claude install .
 ```
 
 Or register the server alone, in any MCP client (Claude Code, Claude Desktop, Cursor):
@@ -138,16 +168,28 @@ claude mcp add defrost -- kev-memory mcp
 
 | in Claude | what it does |
 |---|---|
-| `/memory-init [name]` | builds the memory for the current repo (docs + code; stored in `~/.kev-memory`, not in the repo) |
+| `/defrost-setup` | asks how to keep the memory fresh, installs those triggers, builds the memory |
 | `/memory-search <question>` | searches, then answers from the returned sections with `path:Lstart-end` citations and the linked code |
-| `/memory-update [domain]` | incremental refresh after changes |
+| `/memory-update [domain]` | incremental refresh now |
+| `/memory-init [name]` | builds a memory for a repo or docs folder, no triggers |
 | `/memory-domains` | lists the memories with counts and build times |
 
 MCP tools: `memory_search` (modes `fast`, `rerank`, `dense`, `bm25`, …; `k` = number or `"auto"`),
 `memory_domains`, `memory_init`, `memory_update`, `memory_job`, `memory_rollback`. The server is a thin stdio
 process with no ML dependencies. Searches go to one resident local service (`kev-memory serve`, started on first
 use), so the models load once for all clients. Set `KEV_MEMORY_DOMAINS=my-repo` to restrict searches by default.
-graphify users get the same search inside graphify's MCP server through the patch above.
+
+### With graphify
+
+graphify users can get the same search inside graphify's own CLI and MCP server (patch on v0.4.32):
+
+```sh
+git clone https://github.com/safishamsi/graphify && cd graphify && git checkout v0.4.32 \
+  && git apply ../defrost-ai/integrations/graphify/graphify-0.4.32-kev-memory.patch && pip install -e ".[mcp]"
+export KEV_MEMORY_SERVE_CMD="kev-memory serve"
+graphify memory init . --domain my-repo && graphify claude install
+graphify memory search "how are refunds issued?" -k auto
+```
 
 Python:
 
@@ -160,10 +202,12 @@ for hit in res["hits"]:
 
 Modes: `fast` (default), `rerank` (most accurate, slowest), `dense`, `bm25` (exact strings), `hybrid`, `all`.
 
+FAQ / support chatbots: see [docs/FAQ_CHATBOT.md](docs/FAQ_CHATBOT.md) (use `hybrid` for real-time, about 45 ms).
+
 ## Writing docs the memory reads well
 
-`templates/doc-rules/` is a drop-in kit for any project. `bash templates/doc-rules/install.sh /path/to/project`
-appends a short, highlighted rule block to the end of `CLAUDE.md` and installs:
+`/defrost-setup` offers this kit, or run `kev-memory setup . --doc-rules` (the kit is
+`kev_memory/assets/doc_rules/`, also linked as `templates/doc-rules/`). It appends a short, highlighted rule block to the end of `CLAUDE.md` and installs:
 - the full rules, read only when docs are written, so they don't fill every session;
 - a glossary template;
 - a linter;
@@ -173,12 +217,14 @@ The research behind the rules: [docs/WRITING_FOR_EXTRACTION.md](docs/WRITING_FOR
 
 ## Weights
 
-The LoRA adapters (MNTP, CGSA, Kev-Ret-B, Kev-Rerank + score head, about 140 MB) are attached to the
-[v1.0.0 release](https://github.com/Signaturi4/defrost-ai/releases/tag/v1.0.0):
+The LoRA adapters (MNTP, CGSA, Kev-Ret-B, Kev-Rerank v2 + score head, about 140 MB) are attached to the
+[v1.1.0 release](https://github.com/Signaturi4/defrost-ai/releases/tag/v1.1.0). `install.sh` (or
+`kev-memory download-weights`, or the first search) fetches them to `~/.cache/kev-memory/models` and checks the
+archive's sha256. By hand:
 
 ```sh
-curl -L -o weights.tar.gz https://github.com/Signaturi4/defrost-ai/releases/download/v1.0.0/defrost-ai-weights-v1.0.0.tar.gz
-tar xzf weights.tar.gz                   # -> models/  (sha256 of the archive: adcdf49b369813b5…)
+curl -L -o weights.tar.gz https://github.com/Signaturi4/defrost-ai/releases/download/v1.1.0/defrost-ai-weights-v1.1.0.tar.gz
+tar xzf weights.tar.gz                   # -> models/  (sha256 of the archive: 494fab8997ce01c4…)
 kev-memory verify-weights                # checks every file against models/MANIFEST.json
 ```
 
@@ -206,7 +252,8 @@ kev-memory build benchmarks/heldout/workspace.json
 kev-memory benchmark --suite benchmarks/heldout/questions.jsonl --memory ~/.kev-memory/benchmark-heldout --split dev
 ```
 
-Expected on held-out dev (nDCG@10): bm25 0.711, dense 0.885, hybrid 0.789, rerank 0.870, fast 0.870.
+Expected on held-out dev (nDCG@10): bm25 0.711, dense 0.885, hybrid 0.789, rerank 0.890, fast 0.887
+(weights v1.1.0; with v1.0.0: rerank 0.870, fast 0.870).
 
 ## License
 

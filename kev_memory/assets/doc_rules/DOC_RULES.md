@@ -37,7 +37,8 @@ Rationale and sources: `WRITING_FOR_EXTRACTION.md` in the defrost-ai repo.
 - **Backtick every code identifier and path exactly as written in code:** `charge_invoice()`, `PaymentService`,
   `src/billing/retry.py`, `MAX_RETRIES`, `--dry-run`. Tools link these to the code graph; misspelled or
   un-backticked names are lost.
-- **One canonical name per concept.** List it in `docs/GLOSSARY.md` with its aliases. Use the canonical name in
+- **One canonical name per concept.** List it in `docs/GLOSSARY.md` with its aliases (create the file from
+  `docs/templates/GLOSSARY.template.md` when you add the first term). Use the canonical name in
   headings and Facts, and mention a common alias once if users search for it: "refund (also called reversal)".
 - **No undefined abbreviations.** Spell an abbreviation out on first use in each page.
 

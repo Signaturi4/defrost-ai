@@ -10,7 +10,7 @@ import sys
 from importlib import resources
 from pathlib import Path
 
-COMMANDS = ("memory-search.md", "memory-update.md", "memory-init.md", "memory-domains.md")
+COMMANDS = ("defrost-setup.md", "memory-search.md", "memory-update.md", "memory-init.md", "memory-domains.md")
 
 
 def install(project: Path | None = None, user: bool = False, register_mcp: bool = True) -> list[str]:

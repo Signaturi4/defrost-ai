@@ -3,6 +3,11 @@
   kev-memory build WORKSPACE.json [--domain NAME] [--description TEXT]   build or update (incremental) a memory
   kev-memory update DOMAIN                                               rebuild a registered domain
   kev-memory rollback DOMAIN                                             restore the previous build
+  kev-memory setup [PATH] [--on-main-merge] [--every-hours N] [--claude-hook] [--doc-rules] [--claude]
+                                                                         one-shot project setup + refresh triggers
+  kev-memory refresh DOMAIN [--if-changed]                               what the triggers run
+  kev-memory status [DOMAIN]                                             staleness + installed triggers
+  kev-memory download-weights                                            fetch + verify the model weights (auto on first use)
   kev-memory mcp                                                         MCP server (stdio) for Claude Code / Desktop
   kev-memory claude install [DIR] [--user]                               slash commands + `claude mcp add defrost`
   kev-memory domains                                                     list registered domains
@@ -14,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from pathlib import Path
 import sys
 
@@ -34,6 +40,18 @@ def main(argv=None):
     e.add_argument("--split", default="dev"); e.add_argument("--out"); e.add_argument("--rankings")
     e.add_argument("--only", help="keep suite rows whose \"suite\" field matches (multi-memory suites)")
     sub.add_parser("verify-weights")
+    st = sub.add_parser("setup", help="one-shot project setup + refresh triggers")
+    st.add_argument("path", nargs="?", default="."); st.add_argument("--domain")
+    st.add_argument("--build", choices=["now", "background", "skip"], default="now")
+    st.add_argument("--on-main-merge", action="store_true", help="git hooks: refresh when changes land on main/master")
+    st.add_argument("--every-hours", type=float, help="refresh every N hours (launchd on macOS, cron on Linux)")
+    st.add_argument("--claude-hook", action="store_true", help="Claude Code SessionStart hook: refresh when stale")
+    st.add_argument("--doc-rules", action="store_true", help="add the doc-writing rules block to CLAUDE.md")
+    st.add_argument("--claude", action="store_true", help="install slash commands + register the MCP server")
+    st.add_argument("--remove-triggers", action="store_true")
+    rf = sub.add_parser("refresh"); rf.add_argument("domain"); rf.add_argument("--if-changed", action="store_true")
+    ss = sub.add_parser("status"); ss.add_argument("domain", nargs="?")
+    sub.add_parser("download-weights")
     sub.add_parser("mcp", help="MCP server over stdio (claude mcp add defrost -- kev-memory mcp)")
     c = sub.add_parser("claude", help="Claude Code setup: slash commands + MCP registration")
     c.add_argument("action", choices=["install"]); c.add_argument("project", nargs="?", default=".")
@@ -74,6 +92,21 @@ def main(argv=None):
         print_report(res)
         if a.out:
             open(a.out, "w").write(json.dumps(res, indent=1))
+    elif a.cmd == "setup":
+        from kev_memory.project_setup import setup
+        res = setup(a.path, a.domain, a.build, a.on_main_merge, a.every_hours, a.claude_hook, a.doc_rules, a.claude,
+                    a.remove_triggers)
+        print(json.dumps(res, indent=1, default=str))
+    elif a.cmd == "refresh":
+        from kev_memory.project_setup import refresh
+        res = refresh(a.domain, a.if_changed, log=lambda m: print(time.strftime("%F %T"), m, flush=True))
+        return 0 if res.get("job") != "failed" else 1
+    elif a.cmd == "status":
+        from kev_memory.project_setup import status
+        print(json.dumps(status(a.domain), indent=1))
+    elif a.cmd == "download-weights":
+        from kev_memory.models.weights import download_weights, models_dir
+        print(f"weights ready: {models_dir()}") if _weights_ok() else download_weights()
     elif a.cmd == "mcp":
         from kev_memory.service.mcp_server import main as mcp_main
         mcp_main()
@@ -87,6 +120,15 @@ def main(argv=None):
         print(json.dumps({"dir": str(models_dir()), **res}, indent=1))
         return 0 if res["ok"] else 1
     return 0
+
+
+def _weights_ok() -> bool:
+    try:
+        from kev_memory.models.weights import CACHE, WEIGHTS_VERSION, models_dir, verify
+        d = models_dir(download=False)
+        return verify(d)["ok"] and (d != CACHE / "models" or verify(d)["version"] == WEIGHTS_VERSION)
+    except Exception:
+        return False
 
 
 if __name__ == "__main__":

@@ -24,6 +24,10 @@ from kev_memory import builder
 from kev_memory.library import Library, read_registry, register
 from kev_memory.memory import Memory
 
+from kev_memory import build_id
+
+BUILD = build_id()                                           # the code this process loaded, fixed at start
+
 DEFAULT_PORT = 8765
 
 
@@ -90,7 +94,7 @@ def make_handler(service: Service):
         def do_GET(self):
             try:
                 if self.path == "/health":
-                    return self._send(200, {"ok": True})
+                    return self._send(200, {"ok": True, "build": BUILD})
                 if self.path == "/domains":
                     return self._send(200, service.library.domains())
                 if self.path.startswith("/jobs/"):
@@ -103,6 +107,10 @@ def make_handler(service: Service):
         def do_POST(self):
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                if self.path == "/shutdown":                    # local service only (binds 127.0.0.1)
+                    self._send(200, {"ok": True})
+                    threading.Thread(target=self.server.shutdown, daemon=True).start()
+                    return
                 route = {"/search": service.search, "/update": service.update, "/rollback": service.rollback}.get(self.path)
                 if route is None:
                     return self._send(404, {"error": "not found"})
