@@ -11,7 +11,7 @@
  },
  "workspace": {
   "name": "e2e",
-  "out": "~/.kev-memory/e2e",
+  "out": "~/.defrost-ai/e2e",
   "components": [
    {
     "name": "uvicorn",

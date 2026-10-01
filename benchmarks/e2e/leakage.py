@@ -4,7 +4,7 @@ from pathlib import Path
 REPOS = Path.home() / "e2e-bench/repos"
 TRAIN = [Path(__file__).resolve().parents[2] / "data/training" / p for p in
          ["corpus/corpus_mntp.txt", "corpus/corpus_cgsa.txt", "retriever/train.jsonl", "reranker/rerank_train.jsonl"]] + \
-        []                          # + the Kev-Rerank v2 candidate groups (not distributed)
+        []                          # + the Defrost-Rerank v2 candidate groups (not distributed)
 def grams(t):
     w = re.findall(r"\w+", t.lower())
     return {" ".join(w[i:i + 13]) for i in range(len(w) - 12)}

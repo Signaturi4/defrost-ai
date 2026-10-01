@@ -4,7 +4,7 @@
     uv run modal run modal_bilm_app.py::bilm           # KMP (MNTP) then CGSA, on H100
     uv run modal run modal_bilm_app.py::run_kmp        # just the MNTP stage
     uv run modal run modal_bilm_app.py::bilm --kmp-config kmp_techdoc_modal.json --cgsa-config cgsa_techdoc_modal.json
-                                                       # P2: tech-doc corpus (kev_graph/bilm/techdoc_corpus.py), WSD,
+                                                       # P2: tech-doc corpus (defrost_graph/bilm/techdoc_corpus.py), WSD,
                                                        # 30% masking, MNTP evaluated on held-out docs
 
 Why this is a separate app from modal_graph_app.py. `llm2vec` pins transformers to 4.43.1-4.44.2; the main
@@ -20,7 +20,7 @@ Deviations from the shipped `train_configs/*.json`, all deliberate:
   * `attn_implementation` flash_attention_2 -> sdpa. flash-attn needs a long source build in this image
     and SDPA is mathematically equivalent for these shapes. Not a modelling change.
   * data paths point at our own any-domain corpus rather than wikitext/Wiki1M (see
-    kev_graph/bilm/build_corpus.py for why).
+    defrost_graph/bilm/build_corpus.py for why).
 
 Everything else -- the MNTP objective, mlm_probability 0.2, batch 32, LoRA r=16, lr, bf16, the CGSA
 simcse_dropout 0.3 / loss_scale 20 / mean pooling -- is as shipped.
@@ -36,10 +36,10 @@ from pathlib import Path
 
 import modal
 
-APP_NAME = "kev-bilm"
+APP_NAME = "defrost-bilm"
 ROOT = Path(__file__).resolve().parent
 REF = ROOT / "docs/jev_for_graph/research/kg-bilm-main"
-GPU = os.environ.get("KEV_GPU", "H100")
+GPU = os.environ.get("DEFROST_GPU", "H100")
 RUNS_MOUNT, HF_MOUNT = "/runs", "/hf"
 
 # Verified 2026-09-25 with a local smoke of run_kmp + run_cgsa (WSD, tech-doc corpus). llm2vec 0.2.3 requires
@@ -70,12 +70,12 @@ image = (
     # experiments/ and train_configs/ only -- this deliberately excludes KG-BiLM.pdf (1.8MB of the 2.1MB).
     .add_local_dir(str(REF / "experiments"), "/kgbilm/experiments")
     .add_local_dir(str(REF / "train_configs"), "/kgbilm/train_configs")
-    .add_local_dir(str(ROOT / "kev_graph/bilm/configs"), "/configs")
-    .add_local_dir(str(ROOT / "kev_graph/data/bilm"), "/corpus")
+    .add_local_dir(str(ROOT / "defrost_graph/bilm/configs"), "/configs")
+    .add_local_dir(str(ROOT / "defrost_graph/data/bilm"), "/corpus")
     # corpus/ only: raw/ (unscrubbed local files) never leaves the machine
-    .add_local_dir(str(ROOT / "kev_graph/data/techdoc_mega/corpus"), "/corpus_techdoc")
+    .add_local_dir(str(ROOT / "defrost_graph/data/techdoc_mega/corpus"), "/corpus_techdoc")
 )
-hf_cache = modal.Volume.from_name("kev-hf-cache", create_if_missing=True)
+hf_cache = modal.Volume.from_name("defrost-hf-cache", create_if_missing=True)
 runs_volume = modal.Volume.from_name("kev-runs", create_if_missing=True)
 
 
@@ -140,5 +140,5 @@ def bilm(kmp_config: str = "kmp_modal.json", cgsa_config: str = "cgsa_modal.json
     print(json.dumps(run_cgsa.remote(config=cgsa_config), indent=2))
     print("\nDone. Pull with:")
     for cfg in (kmp_config, cgsa_config):
-        out = json.load(open(ROOT / "kev_graph/bilm/configs" / cfg))["output_dir"].removeprefix("/runs")
+        out = json.load(open(ROOT / "defrost_graph/bilm/configs" / cfg))["output_dir"].removeprefix("/runs")
         print(f"  uv run modal volume get kev-runs {out} runs{out}")

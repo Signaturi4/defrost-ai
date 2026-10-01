@@ -8,8 +8,8 @@ with a confidence you can use to hand off to a human. Your chatbot's LLM writes 
 
 | FAQ chatbot need | what defrost-ai does | evidence |
 |---|---|---|
-| Find the one entry that answers a paraphrased question | Kev-Ret-B embeds "heading + text", so an FAQ entry whose heading *is* the question matches the user's wording directly; BM25 catches product names, error codes and plan names | over 175 test questions, nDCG@10 is 0.696 for BM25, 0.776 for hybrid and 0.838 for `fast` ([RESULTS.md](RESULTS.md) §2) |
-| Answer only from approved text | Returns the section verbatim with `path:Lstart-end`; the reply can quote or cite it | RAGAS groundedness 0.97 when the answer model sees only kev context ([E2E_GRAPHIFY.md](E2E_GRAPHIFY.md)) |
+| Find the one entry that answers a paraphrased question | Defrost-Ret-B embeds "heading + text", so an FAQ entry whose heading *is* the question matches the user's wording directly; BM25 catches product names, error codes and plan names | over 175 test questions, nDCG@10 is 0.696 for BM25, 0.776 for hybrid and 0.838 for `fast` ([RESULTS.md](RESULTS.md) §2) |
+| Answer only from approved text | Returns the section verbatim with `path:Lstart-end`; the reply can quote or cite it | RAGAS groundedness 0.97 when the answer model sees only defrost context ([E2E_GRAPHIFY.md](E2E_GRAPHIFY.md)) |
 | Know when it does not know | Adaptive k uses a calibrated confidence (softmax over the dense scores); one confident entry gives k = 1, a spread gives up to 5 | calibration measured on held-out repos, not yet on FAQ traffic |
 | Stay current when the FAQ changes | Incremental rebuilds (only edited entries are re-embedded, seconds); triggers on merge to main or every N hours | 4–17 s per refresh on a 560-section repo with a 6.8k-node code graph |
 | Run privately | Everything is local: SQLite FTS5, a 0.5B model and 141 MB of adapters; no API calls | — |
@@ -22,7 +22,7 @@ with a confidence you can use to hand off to a human. Your chatbot's LLM writes 
   `rerank` only for offline jobs, for a CUDA server, or as a second pass when hybrid's confidence is low and a
   slower answer is acceptable.
 - **Quality cost of skipping the reranker.** `hybrid` is about 0.06 nDCG below `fast` on the locked test (0.776 vs
-  0.838 with Kev-Rerank v2).
+  0.838 with Defrost-Rerank v2).
   FAQ entries are short and distinct, which tends to narrow that gap, but measure it on your own data.
 - **Abstention is not validated for FAQs.** The confidence is calibrated on technical docs. Before you use it for
   "hand off to a human", pick the threshold on 50–100 real tickets that include questions the FAQ does not answer.
@@ -30,7 +30,7 @@ with a confidence you can use to hand off to a human. Your chatbot's LLM writes 
   untested; check BM25 vs hybrid on your own non-English questions first.
 - **Narrative or very long answers.** Long prose is the weakest domain. A larger public reranker scores 0.949 vs
   our 0.902 on books. Short FAQ entries are the opposite case and suit the model.
-- **The service is local and has no auth.** `kev-memory serve` binds to 127.0.0.1. In production, call it from your
+- **The service is local and has no auth.** `defrost serve` binds to 127.0.0.1. In production, call it from your
   chatbot backend on the same host, or put it behind your own API; never expose it directly.
 
 ## How to set it up
@@ -49,13 +49,13 @@ with a confidence you can use to hand off to a human. Your chatbot's LLM writes 
 2. **Build a docs-only memory.** No code graph is needed:
 
    ```sh
-   kev-memory setup ./faq --domain faq --build now --every-hours 6
+   defrost setup ./faq --domain faq --build now --every-hours 6
    ```
 
 3. **Query from the bot.**
 
    ```python
-   from kev_memory.service import client
+   from defrost_ai.service import client
    res = client.search(user_message, ["faq"], "hybrid", "auto")
    top = res["hits"][0]          # section text, path:lines, heading; len(res["hits"]) == 1 means a confident match
    ```
@@ -69,7 +69,7 @@ with a confidence you can use to hand off to a human. Your chatbot's LLM writes 
 
    ```sh
    # faq_eval.jsonl: {"id": "t1", "question": "how do i stop being charged", "gold": [{"path": "faq/faq/billing.md", "lines": [12, 15]}]}
-   kev-memory benchmark --suite faq_eval.jsonl --memory ~/.kev-memory/faq --split all
+   defrost benchmark --suite faq_eval.jsonl --memory ~/.defrost-ai/faq --split all
    ```
 
    Keep the messages the FAQ does not answer in a separate list. Run them through `client.search` and check how often

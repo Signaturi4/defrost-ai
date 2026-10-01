@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from kev_memory import context_constraints as cc
+from defrost_ai import context_constraints as cc
 
 
 @pytest.fixture
 def home(tmp_path, monkeypatch):
-    monkeypatch.setenv("KEV_MEMORY_HOME", str(tmp_path / "home"))
-    monkeypatch.delenv("KEV_MEMORY_DOMAIN", raising=False)
+    monkeypatch.setenv("DEFROST_HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("DEFROST_DOMAIN", raising=False)
     return tmp_path / "home"
 
 
@@ -58,7 +58,7 @@ def test_tree_constraints_and_config():
 
 # ---- repository, hook, commits, indexes ------------------------------------------------------------------------
 def test_handoff_commit_index_brief_and_facts(home):
-    from kev_memory import context_repo as cr, notes
+    from defrost_ai import context_repo as cr, notes
     f = notes.write_handoff("crm", "Ship the CSV export", "API done", ["use streaming"], ["add UI button"],
                             ["backend/export.py"], when=1_700_000_000)
     root = cr.repo_dir("crm")
@@ -77,7 +77,7 @@ def test_handoff_commit_index_brief_and_facts(home):
 
 
 def test_pre_commit_hook_rejects_bad_files_and_protected_config(home):
-    from kev_memory import context_repo as cr
+    from defrost_ai import context_repo as cr
     root = cr.ensure("crm")
     (root / "notes/bad.md").write_text("no frontmatter here\n")
     git(root, "add", "-A")
@@ -96,7 +96,7 @@ def test_pre_commit_hook_rejects_bad_files_and_protected_config(home):
 
 
 def test_conflict_decisions_live_in_the_repo_and_migrate_from_jsonl(home):
-    from kev_memory import conflicts, context_repo as cr
+    from defrost_ai import conflicts, context_repo as cr
     home.mkdir(parents=True)
     old = {"at": "2026-09-01T10:00:00", "domain": "crm", "doc_path": "docs/A.md", "doc_lines": [1, 5], "doc_says": "x",
            "code_ref": "a.py:1", "code_does": "y", "decision": "doc", "meaning": conflicts.DECISIONS["doc"], "note": ""}
@@ -127,7 +127,7 @@ def _repo(tmp_path):
 
 
 def test_worktree_job_fast_forwards_and_never_touches_the_checkout(home, tmp_path):
-    from kev_memory import worktree as wt
+    from defrost_ai import worktree as wt
     repo = _repo(tmp_path)
     (repo / "dirty.txt").write_text("user's uncommitted work\n")
     res = wt.run(repo, "docs", lambda d: (Path(d) / "doc.md").write_text("new doc\n"), "docs: add")
@@ -142,7 +142,7 @@ def test_worktree_job_fast_forwards_and_never_touches_the_checkout(home, tmp_pat
 
 
 def test_worktree_conflict_keeps_the_branch(home, tmp_path):
-    from kev_memory import worktree as wt
+    from defrost_ai import worktree as wt
     repo = _repo(tmp_path)
     kept = wt.run(repo, "edit", lambda d: (Path(d) / "a.txt").write_text("worker\n"), "worker edit", merge=False)
     (repo / "a.txt").write_text("user\n")
@@ -155,7 +155,7 @@ def test_worktree_conflict_keeps_the_branch(home, tmp_path):
 
 
 def test_defrag_archives_old_notes_and_splits_oversize_files(home):
-    from kev_memory import context_repo as cr, notes
+    from defrost_ai import context_repo as cr, notes
     for i in range(5):
         notes.write_handoff("crm", f"task {i}", when=1_700_000_000 + i * 60)
     big = "\n".join(f"## Part {i}\n" + "word " * 300 for i in range(20))  # ~30k chars: above the 20k limit
@@ -172,7 +172,7 @@ def test_defrag_archives_old_notes_and_splits_oversize_files(home):
 
 # ---- extractive handoff before compaction -----------------------------------------------------------------------
 def test_compact_handoff_extracts_goal_todos_files_questions(home, tmp_path, monkeypatch):
-    from kev_memory import compact_handoff, context_repo as cr
+    from defrost_ai import compact_handoff, context_repo as cr
     lines = [
         {"type": "user", "message": {"content": "Add rate limiting to the export API"}},
         {"type": "assistant", "message": {"content": [
@@ -191,13 +191,13 @@ def test_compact_handoff_extracts_goal_todos_files_questions(home, tmp_path, mon
     assert x["goal"] == "Add rate limiting to the export API" and x["files"] == ["backend/api.py"]
     assert x["next_steps"] == ["document RATE_LIMIT env var"] and "1 done, 1 in progress, 1 pending" in x["state"]
     assert x["decisions"] == ["open question: Should the limit be per org or per user?"]
-    monkeypatch.setenv("KEV_MEMORY_DOMAIN", "crm")
+    monkeypatch.setenv("DEFROST_DOMAIN", "crm")
     f = compact_handoff.run({"transcript_path": str(t), "cwd": str(tmp_path), "trigger": "auto"})
     assert f and f.exists() and "before auto compaction" in cr.parse(f.read_text())[0]["description"]
 
 
 def test_map_brief_respects_the_word_budget(home):
-    from kev_memory import context_repo as cr
+    from defrost_ai import context_repo as cr
     cr.ensure("crm")
     cr.commit("crm", {"conventions.md": cr.render("Conventions", "standing rules", "rule " * 2000)}, "core facts")
     b = cr.map_brief("crm", max_words=120)
@@ -208,13 +208,31 @@ def test_memory_files_follow_the_writing_rules_except_frontmatter_type(home):
     """docs/WRITING_FOR_EXTRACTION.md via doc_lint: no ERROR other than the doc-page frontmatter `type` (memory
     files use Letta's name/description frontmatter, enforced by the pre-commit hook instead)."""
     import importlib.util
-    from kev_memory import conflicts, notes
+    from defrost_ai import conflicts, notes
     spec = importlib.util.spec_from_file_location(
-        "doc_lint", Path(__file__).resolve().parents[1] / "kev_memory/assets/doc_rules/tools/doc_lint.py")
+        "doc_lint", Path(__file__).resolve().parents[1] / "defrost_ai/assets/doc_rules/tools/doc_lint.py")
     lint = importlib.util.module_from_spec(spec); spec.loader.exec_module(lint)
     note = notes.write_handoff("crm", "Ship the CSV export", "done", [], ["add UI"], ["backend/export.py"])
     dec = conflicts.record("crm", "docs/B.md", "code", "CI runs kamal", "CI ssh", "ci.yml:3", [1, 2])
-    from kev_memory import context_repo as cr
+    from defrost_ai import context_repo as cr
     for f in (note, cr.repo_dir("crm") / dec["file"]):
         errors = [i for i in lint.lint(f) if i[0] == "ERROR" and "frontmatter type" not in i[2]]
         assert errors == [], (f, errors)
+
+
+def test_place_moves_the_repo_into_the_project_and_hides_it_from_project_git(home, tmp_path):
+    from defrost_ai import context_repo as cr, notes
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    git(proj, "init", "-q")
+    notes.write_handoff("p", "goal before the move", "", [], [], [])          # created under the home
+    assert cr.repo_dir("p") == home / "p.context"
+    res = cr.place("p", proj)
+    assert res["moved"] and cr.repo_dir("p") == proj / "defrost-memory" and not (home / "p.context").exists()
+    assert "goal before the move" in notes.latest("p").read_text()
+    assert "/defrost-memory/" in (proj / ".git/info/exclude").read_text()
+    assert git(proj, "status", "--porcelain").stdout == ""                    # the project's git does not see it
+    notes.write_handoff("p", "goal after the move", "", [], [], [])
+    assert cr.check("p") == [] and len(cr.log("p")) >= 3
+    cr.place("p", None)                                                       # back to the home
+    assert cr.repo_dir("p") == home / "p.context" and (home / "p.context/.git").exists()

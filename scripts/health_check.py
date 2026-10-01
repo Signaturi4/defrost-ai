@@ -6,7 +6,7 @@
 3. latency: cold load times and warm per-query time (rerank mode)
 4. service (optional, --service): the resident HTTP service answers /health and a search
 
-    KEV_MEMORY_MODELS=<weights> python scripts/health_check.py [--save-reference] [--service]
+    DEFROST_MODELS=<weights> python scripts/health_check.py [--save-reference] [--service]
 Exit code 1 when a check fails. Latency is reported, never failed on."""
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 REF = ROOT / "results/private/latency/health_reference.json"
-MEMORY = Path("~/.kev-memory/parity-heldout").expanduser()
+MEMORY = Path("~/.defrost-ai/parity-heldout").expanduser()
 QUESTIONS = ROOT / "benchmarks/heldout/questions.jsonl"
 MODES = ("fast", "rerank", "hybrid", "dense", "bm25", "all")
 
@@ -44,8 +44,8 @@ def main():
     fails = []
 
     t = time.perf_counter()
-    from kev_memory.memory import Memory, Models
-    from kev_memory.retrieval import policy
+    from defrost_ai.memory import Memory, Models
+    from defrost_ai.retrieval import policy
     import_s = time.perf_counter() - t
     qs = [json.loads(l)["question"] for l in open(QUESTIONS)][:3]
     t = time.perf_counter(); models = Models(); mem = Memory(MEMORY, models)
@@ -105,7 +105,7 @@ def main():
 
     # 4. service
     if a.service:
-        from kev_memory.service import client
+        from defrost_ai.service import client
         client.ensure_service()
         h = client._call("GET", "/health")
         t = time.perf_counter(); r = client.search(qs[1], None, "fast", "auto"); dt = time.perf_counter() - t

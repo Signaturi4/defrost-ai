@@ -4,7 +4,7 @@ import subprocess
 
 import pytest
 
-from kev_memory import docsync, store
+from defrost_ai import docsync, store
 
 
 def sh(cwd, *args):
@@ -14,7 +14,7 @@ def sh(cwd, *args):
 @pytest.fixture
 def repo(tmp_path, monkeypatch):
     home = tmp_path / "km"
-    monkeypatch.setenv("KEV_MEMORY_HOME", str(home))
+    monkeypatch.setenv("DEFROST_HOME", str(home))
     r = tmp_path / "proj"
     (r / "src").mkdir(parents=True); (r / "docs").mkdir(); (r / "deploy").mkdir()
     (r / "src/billing.py").write_text("def charge_invoice(x):\n    return x\n\n\ndef refund(x):\n    return -x\n")

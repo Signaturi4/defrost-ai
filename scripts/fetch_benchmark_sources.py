@@ -40,7 +40,7 @@ def main():
         subprocess.run(["git", "-C", str(d), "checkout", "--quiet", commit], check=True)
         print(f"{name} @ {commit[:10]}")
     for bench, ws in WORKSPACES.items():
-        spec = {**ws, "out": f"~/.kev-memory/benchmark-{bench}",
+        spec = {**ws, "out": f"~/.defrost-ai/benchmark-{bench}",
                 "components": [{**c, "path": str(SOURCES / c["path"])} for c in ws["components"]]}
         (ROOT / f"benchmarks/{bench}/workspace.json").write_text(json.dumps(spec, indent=1))
         print(f"-> benchmarks/{bench}/workspace.json")

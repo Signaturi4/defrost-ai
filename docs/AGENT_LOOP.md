@@ -7,7 +7,7 @@ current. The graph is for navigation; the answer always comes from a doc section
 
 Rendered copies for slides and the README: architecture ([svg](img/agent_loop-1.svg), [png](img/agent_loop-1.png)), loop ([svg](img/agent_loop-2.svg), [png](img/agent_loop-2.png)).
 
-Everything in both diagrams is on `main`: the conflict step (human in the loop), the git-backed context repo, its worktree workers and the PreCompact handoff (opt-in: `kev-memory setup --handoff-on-compact`).
+Everything in both diagrams is on `main`: the conflict step (human in the loop), the git-backed context repo, its worktree workers and the PreCompact handoff (opt-in: `defrost setup --handoff-on-compact`).
 
 ## 1. Where the system sits
 
@@ -33,22 +33,22 @@ flowchart LR
         F["File tools<br/>Read · Grep · Glob · Bash"]
     end
 
-    subgraph Service["kev-memory service (resident, 127.0.0.1:8765)"]
+    subgraph Service["defrost service (resident, 127.0.0.1:8765)"]
         direction LR
         S1["BM25<br/>FTS5 · ~2 ms"] --> P{"fast policy:<br/>top-1 agrees?"}
-        S2["Kev-Ret-B<br/>query vector · ~0.1 s"] --> P
+        S2["Defrost-Ret-B<br/>query vector · ~0.1 s"] --> P
         P -- "yes: hybrid" --> K
-        P -- "no" --> S3["Kev-Rerank v2<br/>MLX fp16 · ~1.5 s<br/>score cache"] --> K["adaptive k (1-5)<br/>+ trust header · verify in / ! flags<br/>+ resolved: decisions"]
+        P -- "no" --> S3["Defrost-Rerank v2<br/>MLX fp16 · ~1.5 s<br/>score cache"] --> K["adaptive k (1-5)<br/>+ trust header · verify in / ! flags<br/>+ resolved: decisions"]
     end
 
     subgraph Stores["Local stores (outside your repo)"]
         direction LR
-        subgraph Store["Project memory · ~/.kev-memory/&lt;domain&gt;"]
+        subgraph Store["Project memory · ~/.defrost-ai/&lt;domain&gt;"]
             D1[("knowledge.sqlite<br/>sections · links · FTS")]
             D2[("section_vectors.npz")]
             D3[("code_graph.json<br/>graphify AST")]
         end
-        subgraph Ctx["Context repo (git) · &lt;domain&gt;.context"]
+        subgraph Ctx["Context repo (git) · &lt;project&gt;/defrost-memory"]
             C0["MEMORY.md map + core files"]
             C1["notes/ handoff notes"]
             C2["decisions/ conflict decisions"]

@@ -2,7 +2,7 @@
 sections + code graph with the linker in this checkout, sample them by risk class for hand labelling, and score
 labels before / after a linker change.
 
-    python scripts/link_audit.py sample --memory ~/.kev-memory/gcrm-grounding --n 50 --seed 1 >> sample.jsonl
+    python scripts/link_audit.py sample --memory ~/.defrost-ai/gcrm-grounding --n 50 --seed 1 >> sample.jsonl
     python scripts/link_audit.py show sample.jsonl            # doc sentence + target code, for labelling
     python scripts/link_audit.py score labels.jsonl           # precision per class; re-links with this checkout
 
@@ -23,7 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from kev_memory.ingest import links as L  # noqa: E402
+from defrost_ai.ingest import links as L  # noqa: E402
 
 TEST_PATH = re.compile(r"(^|/)(tests?|__tests__|spec|e2e)(/|$)|[._-](test|spec)\.[a-z]+$|(^|/)test_[^/]+$")
 
@@ -53,7 +53,7 @@ def how_resolved(m: str, idx) -> str:   # classification of the BEFORE linker (s
 def load_memory(mem: Path):
     db = sqlite3.connect(mem / "knowledge.sqlite")
     code = json.loads((mem / "code_graph.json").read_text())
-    wsf = Path.home() / ".kev-memory" / f"{mem.name}.workspace.json"
+    wsf = Path.home() / ".defrost-ai" / f"{mem.name}.workspace.json"
     if wsf.exists():
         ws = json.loads(wsf.read_text())
     else:                                   # test copies built from a temporary workspace: rebuild it from the manifest
@@ -106,7 +106,7 @@ def show(a):
     cache = {}
     for i, line in enumerate(open(a.file)):
         r = json.loads(line)
-        mem = Path("~/.kev-memory").expanduser() / r["memory"]
+        mem = Path("~/.defrost-ai").expanduser() / r["memory"]
         if mem not in cache:
             db, code, roots, secs, ws = load_memory(mem)
             cache[mem] = (db, {n["id"]: n for n in code["nodes"]}, roots)
@@ -132,7 +132,7 @@ def score(a):
     rows = [json.loads(l) for l in open(a.file)]
     now = {}
     for mem in {r["memory"] for r in rows}:
-        now[mem], *_ = relink(Path("~/.kev-memory").expanduser() / mem)
+        now[mem], *_ = relink(Path("~/.defrost-ai").expanduser() / mem)
     shown_before, shown_after = Counter(), Counter()
     tab = defaultdict(lambda: Counter())
     for r in rows:

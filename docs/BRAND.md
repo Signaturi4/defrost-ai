@@ -72,10 +72,10 @@ Honesty is part of the brand. Say these plainly wherever results appear:
 |---|---|
 | **Product** | `defrost-ai`, always lowercase, hyphenated, in code and prose. At the start of a sentence, still `defrost-ai`. |
 | **Short form** | "defrost" (CLI talk, MCP server name `defrost`). |
-| **Package / CLI** | `kev-memory` today. Plan: publish as `defrost-ai` on PyPI with `defrost` as the CLI and keep `kev-memory` as an alias for one minor version. |
-| **Models** | Keep the research names: **Kev-Ret-B** (retriever) and **Kev-Rerank v2** (reranker). Models are ingredients; the product is defrost-ai. |
+| **Package / CLI** | Package `defrost-ai` (import `defrost_ai`), CLI `defrost`. The old name `kev-memory` stays as a command alias, and `KEV_MEMORY_*` / `~/.kev-memory` are still read, until 1.3. |
+| **Models** | **Defrost-Ret-B** (retriever) and **Defrost-Rerank v2** (reranker). Models are ingredients; the product is defrost-ai. Weight folders are `defrost-ret-b/` and `defrost-rerank/`; the v1.1.0 archive still uses the old folder names, which the loader accepts. |
 | **Commands** | `/defrost-setup` for setup; `/memory-*` for daily use (search, update, domains). Verbs, not nouns. |
-| **Versions** | Software and weights share SemVer (`v1.1.0` = Kev-Rerank v2 weights). A weights change that moves metrics is at least a minor bump. |
+| **Versions** | Software and weights share SemVer (`v1.1.0` = Defrost-Rerank v2 weights). A weights change that moves metrics is at least a minor bump. |
 
 Avoid: "AI brain", "second brain", "AGI", "revolutionary", ice puns in technical docs.
 
@@ -142,7 +142,7 @@ actually reads" + the 94% vs 6% stat), favicon, a terminal GIF of `/defrost-setu
 | **0. Foundation** | before announcing | logo + social preview, PyPI `defrost-ai`, CONTRIBUTING/SECURITY/CoC, README first screen per §7, sub-3 s search milestone | install-to-first-answer < 5 min on a clean Mac |
 | **1. Soft launch** | week 1 | Show HN / r/LocalLLaMA / Claude Code community post with the 94% vs 6% result and the GIF; MCP server directories | 100 stars, 10 issues from real users |
 | **2. Proof** | weeks 2–6 | 3 case studies (OSS repo, private monorepo, FAQ bot), a reproducible benchmark page, Cursor + Claude Desktop guides | 3 external repos using `/defrost-setup`; first outside PR |
-| **3. Ecosystem** | months 2–3 | Hugging Face model cards for Kev-Ret-B / Kev-Rerank v2, graphify upstream PR for the memory integration, MLX/fast path release | weights downloads, upstream merge |
+| **3. Ecosystem** | months 2–3 | Hugging Face model cards for Defrost-Ret-B / Defrost-Rerank v2, graphify upstream PR for the memory integration, MLX/fast path release | weights downloads, upstream merge |
 
 ## 10. One-page summary
 
