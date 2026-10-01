@@ -191,6 +191,16 @@ MCP tools: `memory_search` (modes `fast`, `rerank`, `dense`, `bm25`, …; `k` = 
 process with no ML dependencies. Searches go to one resident local service (`kev-memory serve`, started on first
 use), so the models load once for all clients. Set `KEV_MEMORY_DOMAINS=my-repo` to restrict searches by default.
 
+### Working memory: a git-backed context repository
+
+Handoff notes (`/handoff`, `memory_handoff`) and your doc/code conflict decisions are stored as small Markdown
+files in a per-project git repo, `~/.kev-memory/<domain>.context/`. Every write is one commit, so you can audit
+what the agent remembered and why (`kev-memory context log`), share it with your team through a remote
+(`kev-memory context remote <url>`), and search it as the domain `<domain>-context`. The layout and the
+pre-commit validation follow Letta Code's context repositories. `--handoff-on-compact` saves a note before each
+compaction with no model calls, and `kev-memory context defrag` archives old notes in a worktree job. Details:
+[docs/LETTA_CONTEXT_REPOS.md](docs/LETTA_CONTEXT_REPOS.md).
+
 ### With graphify
 
 graphify users can get the same search inside graphify's own CLI and MCP server (patch on v0.4.32):
@@ -292,6 +302,6 @@ Expected on held-out dev (nDCG@10): bm25 0.711, dense 0.885, hybrid 0.789, reran
 
 ## License
 
-Code: MIT. Model adapters: LoRA weights on Qwen2.5-0.5B (Apache-2.0). `training/source/kg_bilm_experiments`: MIT
+Code: MIT; parts of the context repository are ported from Letta Code (Apache-2.0, see `NOTICE`). Model adapters: LoRA weights on Qwen2.5-0.5B (Apache-2.0). `training/source/kg_bilm_experiments`: MIT
 (McGill NLP). The benchmark books keep their own licenses (Pro Git CC BY-NC-SA 3.0, Eloquent JavaScript CC BY-NC,
 500 Lines or Less CC BY 3.0); only questions and line references are included, not the texts.

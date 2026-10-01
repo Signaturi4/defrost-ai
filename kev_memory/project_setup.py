@@ -286,15 +286,16 @@ def remove_memory_rule(root: Path) -> None:
 # ---- setup ----------------------------------------------------------------------------------------------------------
 def setup(path=".", domain=None, build="now", on_main_merge=False, every_hours=None, claude_hook=False,
           doc_rules=False, claude=False, remove=False, log=print, doc_trust=None, handoff=False, docs_sync=False,
-          docs_auto=False, docs_budget=0.5) -> dict:
+          docs_auto=False, docs_budget=0.5, handoff_on_compact=False, docs_auto_merge=False) -> dict:
     """doc_trust: "high" | "low" | None (keep the stored level; "low" for a new domain). See kev_memory/trust.py."""
     root = Path(path).expanduser().resolve()
     name = domain or root.name.lower().replace(" ", "-")
     out = {"domain": name, "path": str(root)}
     if remove:
         remove_git_hooks(root); remove_schedule(name); remove_claude_hook(root); remove_memory_rule(root)
-        from kev_memory import docsync, notes
+        from kev_memory import compact_handoff, docsync, notes
         notes.remove_hook(root)
+        compact_handoff.remove_hook(root)
         docsync.remove_hooks(root)
         state_file(name).unlink(missing_ok=True)
         log(f"[{name}] triggers removed")
@@ -324,12 +325,17 @@ def setup(path=".", domain=None, build="now", on_main_merge=False, every_hours=N
         trig["claude_hook"] = install_claude_hook(root, name)
     if handoff:
         from kev_memory import notes
-        notes.register_notes(name)
+        notes.register_notes(name)                                   # context repo + its search domain
         trig["handoff"] = notes.install_hook(root)
+    if handoff_on_compact:
+        from kev_memory import compact_handoff
+        trig["handoff_on_compact"] = compact_handoff.install_hook(root)
     if docs_sync:
         from kev_memory import docsync
         trig["docs_sync"] = {"auto": docs_auto, "budget_usd": docs_budget if docs_auto else 0,
-                             "files": docsync.install_hooks(root, auto=docs_auto, budget_usd=docs_budget)}
+                             "auto_merge": bool(docs_auto and docs_auto_merge),
+                             "files": docsync.install_hooks(root, auto=docs_auto, budget_usd=docs_budget,
+                                                            auto_merge=docs_auto_merge)}
     state_file(name).write_text(json.dumps({"path": str(root), "installed": time.strftime("%Y-%m-%dT%H:%M:%S"),
                                             "triggers": trig}, indent=1))
     out["triggers"] = trig

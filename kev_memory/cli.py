@@ -15,7 +15,8 @@
   kev-memory docs-for config/deploy.yml [...]                           doc sections to review after editing these files
   kev-memory serve [--port 8765]                                         resident HTTP service
   kev-memory benchmark --suite FILE.jsonl --memory DIR [--split dev]
-  kev-memory verify-weights                                              check model files against MANIFEST.json"""
+  kev-memory verify-weights                                              check model files against MANIFEST.json
+  kev-memory context init|check|log|brief|defrag|branches|merge|remote   the project's git-backed working memory"""
 from __future__ import annotations
 
 import argparse
@@ -59,6 +60,10 @@ def main(argv=None):
     st.add_argument("--docs-auto", action="store_true",
                     help="also run claude -p /document-changes after every commit made outside Claude (costs tokens)")
     st.add_argument("--docs-budget", type=float, default=0.5, help="USD cap per automatic run (default 0.5)")
+    st.add_argument("--docs-auto-merge", action="store_true",
+                    help="fast-forward the docs-auto branch into the checkout (default: keep defrost/docs/<sha> for review)")
+    st.add_argument("--handoff-on-compact", action="store_true",
+                    help="Claude Code PreCompact hook: write an extractive handoff note (no model calls); implies --handoff")
     st.add_argument("--remove-triggers", action="store_true")
     st.add_argument("--doc-trust", choices=["high", "low"],
                     help="high: docs are reliable, answer from them; low (default): docs are hints, always check code")
@@ -92,6 +97,15 @@ def main(argv=None):
     da = sub.add_parser("docs-auto", help="run claude -p /document-changes <sha> (budget-capped; edits docs only)")
     da.add_argument("commit", nargs="?", default="HEAD"); da.add_argument("--budget", type=float, default=0.5)
     da.add_argument("--dry-run", action="store_true")
+    da.add_argument("--merge", action="store_true", help="fast-forward the branch into the checkout when clean")
+    sub.add_parser("compact-handoff", help="Claude Code PreCompact hook handler (reads the hook JSON on stdin)")
+    cx = sub.add_parser("context", help="the project's context repository (git-backed working memory)")
+    cx.add_argument("action", choices=["init", "check", "log", "defrag", "branches", "merge", "remote", "brief"])
+    cx.add_argument("arg", nargs="?", help="merge: branch name; remote: URL ('none' to remove)")
+    cx.add_argument("--domain"); cx.add_argument("-n", type=int, default=20)
+    cx.add_argument("--keep-notes", type=int, default=20, help="defrag: handoff notes kept outside notes/archive")
+    cx.add_argument("--review", action="store_true", help="defrag: keep the result on a branch instead of merging")
+    cx.add_argument("--repo", help="branches/merge: a project repo instead of the context repo (docs-auto branches)")
     a = ap.parse_args(argv)
 
     if a.cmd == "build":
@@ -149,7 +163,8 @@ def main(argv=None):
     elif a.cmd == "setup":
         from kev_memory.project_setup import setup
         res = setup(a.path, a.domain, a.build, a.on_main_merge, a.every_hours, a.claude_hook, a.doc_rules, a.claude,
-                    a.remove_triggers, doc_trust=a.doc_trust, handoff=a.handoff,
+                    a.remove_triggers, doc_trust=a.doc_trust, handoff=a.handoff or a.handoff_on_compact,
+                    handoff_on_compact=a.handoff_on_compact, docs_auto_merge=a.docs_auto_merge,
                     docs_sync=a.docs_sync or a.docs_auto, docs_auto=a.docs_auto, docs_budget=a.docs_budget)
         print(json.dumps(res, indent=1, default=str))
     elif a.cmd == "refresh":
@@ -210,17 +225,67 @@ def main(argv=None):
         from kev_memory import docsync, notes
         print(docsync.resolve(notes.domain_for(Path.cwd()), a.commit), "task(s) resolved")
     elif a.cmd == "docs-auto":
+        import os
         import subprocess as sp
-        from kev_memory import docsync, notes
+        from kev_memory import docsync, notes, worktree
         root = notes.git_root(Path.cwd())
         sha = docsync.git(root, "rev-parse", "--short", a.commit).strip()
-        if not any(t["source"] == sha for t in docsync.pending(notes.domain_for(root) or "")):
+        domain = notes.domain_for(root) or ""
+        if not any(t["source"] == sha for t in docsync.pending(domain)):
             print(time.strftime("%F %T"), f"{sha}: no pending doc task; nothing to run")
             return 0
         cmd = docsync.auto_command(sha, a.budget)
-        print(time.strftime("%F %T"), "running:" if not a.dry_run else "would run:", " ".join(cmd), flush=True)
-        if not a.dry_run:
-            return sp.run(cmd, cwd=root).returncode
+        branch = f"defrost/docs/{sha}"
+        print(time.strftime("%F %T"), "would run" if a.dry_run else "running", f"in a worktree on {branch}:",
+              " ".join(cmd), flush=True)
+        if a.dry_run:
+            return 0
+        env = {**os.environ, "KEV_MEMORY_DOMAIN": domain}            # the worktree path is not a registered domain
+        res = worktree.run(root, f"docs/{sha}", lambda d: sp.run(cmd, cwd=d, env=env, check=False),
+                           message=f"docs: document {sha} (defrost-ai docs-auto)", merge=a.merge, branch=branch)
+        print(time.strftime("%F %T"), json.dumps(res), flush=True)
+        return 0 if res["status"] != "failed" else 1
+    elif a.cmd == "compact-handoff":
+        from kev_memory import compact_handoff
+        try:
+            f = compact_handoff.run(json.loads(sys.stdin.read() or "{}"))
+        except Exception as e:                           # noqa: BLE001  a broken hook must never block compaction
+            print(f"defrost-ai compact handoff error: {e}", file=sys.stderr)
+            return 0
+        if f:
+            print(f"defrost-ai: handoff note written before compaction: {f}", file=sys.stderr)
+    elif a.cmd == "context":
+        from kev_memory import context_repo as cr, notes, worktree
+        name = a.domain or notes.domain_for(Path.cwd())
+        if not name and not (a.repo and a.action in ("branches", "merge")):
+            print("no memory domain for this directory (run kev-memory setup . first, or pass --domain)")
+            return 1
+        if a.action == "init":
+            print(cr.ensure(name)); print(cr.register(name))
+        elif a.action == "check":
+            errors = cr.check(name)
+            print("\n".join(errors) or "context repository OK")
+            return 1 if errors else 0
+        elif a.action == "log":
+            for r in cr.log(name, a.n):
+                print(f"{r['sha']}  {r['date']}  {r['author']:<12} {r['subject']}")
+        elif a.action == "brief":
+            print(cr.map_brief(name))
+        elif a.action == "defrag":
+            print(json.dumps(cr.defrag(name, a.keep_notes, merge=not a.review), indent=1))
+        elif a.action == "branches":
+            for b in worktree.branches(Path(a.repo).resolve() if a.repo else cr.repo_dir(name)):
+                print(f"{b['branch']:<45} {b['sha']}  {b['date']}  +{b['ahead']}  {b['subject']}")
+        elif a.action == "merge":
+            if not a.arg:
+                print("usage: kev-memory context merge <branch> [--repo PATH]")
+                return 1
+            res = worktree.merge_branch(Path(a.repo).resolve() if a.repo else cr.repo_dir(name), a.arg)
+            print(json.dumps(res, indent=1))
+            return 0 if res["status"] == "merged" else 1
+        elif a.action == "remote":
+            url = None if (a.arg or "none") == "none" else a.arg
+            print(json.dumps(cr.set_remote(name, url), indent=1))
     elif a.cmd == "verify-weights":
         from kev_memory.models.weights import models_dir, verify
         res = verify()

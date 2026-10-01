@@ -7,7 +7,8 @@ on first use, so the models load once and are shared by all clients.
 
 Tools: memory_search, memory_docs_for, memory_domains, memory_init, memory_update, memory_job, memory_rollback,
 memory_handoff, memory_brief (session working memory, see kev_memory/notes.py), memory_resolve_conflict,
-memory_conflicts (doc/code conflicts are decided by the user, see kev_memory/conflicts.py).
+memory_conflicts (doc/code conflicts are decided by the user, see kev_memory/conflicts.py), memory_context_log
+(history of the git-backed working memory, see kev_memory/context_repo.py).
 graphify users get the same search tools inside graphify's own MCP server via the patch in integrations/graphify/."""
 from __future__ import annotations
 
@@ -123,8 +124,8 @@ def build_server():
                        domain: str | None = None) -> str:
         """Save a handoff note for this project so the work can continue after /clear with a small context:
         goal (one paragraph, with acceptance criteria), state (what is done and verified), decisions (with the
-        reason), next_steps (concrete), files (paths that matter). The note is indexed as the '<domain>-notes'
-        memory; after /clear the SessionStart hook shows its brief. Call it before /clear or when the user ends a
+        reason), next_steps (concrete), files (paths that matter). The note is committed to the project's context
+        repository and indexed as the '<domain>-context' memory; after /clear the SessionStart hook shows its brief. Call it before /clear or when the user ends a
         session. domain: default = the memory domain of the current directory."""
         from kev_memory import notes
         name = domain or notes.domain_for(os.getcwd())
@@ -149,9 +150,19 @@ def build_server():
 
     @mcp.tool()
     def memory_brief(domain: str | None = None) -> str:
-        """The latest handoff note of this project as a short brief (goal, state, next steps, files)."""
+        """The latest handoff note of this project as a short brief (goal, state, next steps, files), plus the map of
+        its context repository (open a folder's MEMORY.md for more; search domain '<domain>-context')."""
         from kev_memory import notes
         return notes.brief(domain or notes.domain_for(os.getcwd())) or "no handoff notes yet"
+
+    @mcp.tool()
+    def memory_context_log(domain: str | None = None, n: int = 15) -> str:
+        """Audit trail of the project's working memory: the latest commits of its context repository (handoff notes,
+        the user's doc/code decisions, maintenance), newest first."""
+        from kev_memory import context_repo, notes
+        name = domain or notes.domain_for(os.getcwd())
+        rows = context_repo.log(name, n) if name else []
+        return "\n".join(f"{r['sha']} {r['date']} {r['author']}: {r['subject']}" for r in rows) or "no context history"
 
     return mcp
 

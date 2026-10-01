@@ -120,3 +120,61 @@ run together, and four patterns are worth taking over.
   measurements in this repo show that answers live in sections found on demand.
 - **The Letta server dependency.** MemFS v2 assumes a Letta backend (cloud or local) for agent state, recall and
   sync. The file format and git workflow can be adopted without it.
+
+## 4. What we adopted (branch `feature/context-repo`)
+
+Letta Code's logic was ported to Python, not vendored: the TypeScript is not shipped. Attribution is in `NOTICE`,
+the Apache-2.0 license is in `third_party/letta-code/LICENSE`, and every ported module names its sources in its
+header.
+
+| defrost-ai module | ported from (Letta Code, commit 3687ea51) | what changed |
+|---|---|---|
+| `kev_memory/context_constraints.py` | `src/memory-frontmatter.ts`, `src/memory-constraints.ts`, `src/agent/memory-constraints.ts` | one layout (memfs v2); allowed keys are `name`, `description` and the protected `read_only`; config edits need `DEFROST_CONTEXT_CONFIG_UPDATE=1` |
+| `kev_memory/context_repo.py` | `src/agent/memory-format.ts`, `src/agent/memory-git-hooks.ts`, `src/agent/memory-scanner.ts`, maintenance skills | one repository per project domain, not per agent; indexes are generated from frontmatter; sync is a plain git remote, with no Letta server |
+| `kev_memory/worktree.py` | `src/agent/memory-worktree.ts`, `src/agent/memory-operation.ts`, `src/utils/worktree-lock.ts` | `fcntl` lock; merges are fast-forward only; on a conflict the branch is kept, with no LLM repair |
+| `kev_memory/compact_handoff.py` | idea from `src/agent/reflection-runs.ts` | extractive, with no model calls |
+
+**The context repository.**
+- **Where:** `~/.kev-memory/<domain>.context/`, a git repo on branch `main`.
+- **Layout:**
+  - root `MEMORY.md` is the map;
+  - `project.md` is the core file;
+  - `notes/` holds handoff notes, with archived ones in `notes/archive/`;
+  - `decisions/` holds the user's doc/code conflict decisions;
+  - `.memfs.config.json` sets the limits.
+- **Rules:** every write is one commit by `defrost-ai`. The pre-commit hook embeds the validator source, so it runs
+  without the package installed.
+- **Post-commit hook:** re-indexes the search domain `<domain>-context` and, if `kev-memory context remote URL` was
+  set, pushes to the team remote.
+- **Migration:** the old notes folder and the `conflicts.jsonl` log are migrated on the first write.
+
+**Commands.**
+
+| command | what it does |
+|---|---|
+| `kev-memory context init` | creates the repo and registers `<domain>-context` |
+| `kev-memory context check` | runs the hook's validation on the working tree |
+| `kev-memory context log` | the audit trail, also the MCP tool `memory_context_log` |
+| `kev-memory context brief` | the root map plus core files, within a word budget |
+| `kev-memory context defrag` | archives old notes, splits oversize files and rebuilds indexes, as a worktree job that fast-forwards `main` |
+| `kev-memory context branches [--repo .]`, `context merge <branch>` | review and merge job branches |
+| `kev-memory context remote URL\|none` | sets or removes the team remote |
+
+**Changed behaviour.**
+- **`--docs-auto`:** the background `claude -p /document-changes` now runs in a worktree of the project on
+  `defrost/docs/<sha>`. The branch waits for review by default; `--docs-auto-merge` fast-forwards it when clean.
+- **`--handoff-on-compact`:** a PreCompact hook writes an extractive handoff from the transcript: the first and
+  latest request, the TodoWrite state, edited files and open questions.
+
+**Writing rules.** Generated notes and decisions follow `docs/WRITING_FOR_EXTRACTION.md` for their bodies:
+- one topic per section, with the goal named in each heading;
+- names and paths in backticks;
+- a `Facts:` block of `Subject → relation → Object` lines.
+
+They use Letta's `name`/`description` frontmatter instead of the doc-page `type/entity/status/updated` fields, and
+the hook enforces it. A test lints them with `doc_lint.py`.
+
+**Not built.**
+- **An LLM reflection pass** (Letta's sleep-time agent). It would plug into `context_repo.defrag` as an extra job
+  step. It would be opt-in and budget-capped.
+- **LLM conflict repair** for kept branches.
