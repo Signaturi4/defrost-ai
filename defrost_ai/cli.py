@@ -45,8 +45,15 @@ def _k(v):
     return v if v == "auto" else int(v)
 
 
+def _version_line() -> str:
+    from defrost_ai import __version__
+    from defrost_ai.models.weights import WEIGHTS_VERSION
+    return f"defrost {__version__} (weights {WEIGHTS_VERSION})"
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="defrost", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--version", action="version", version=_version_line())
     sub = ap.add_subparsers(dest="cmd", required=True, metavar="COMMAND")
 
     st = sub.add_parser("setup", help="set up a repository (quick: 3 questions)",
@@ -222,9 +229,27 @@ def main(argv=None):
             open(a.out, "w").write(json.dumps(res, indent=1))
     elif a.cmd == "download-weights":
         from defrost_ai.models.merged_cache import gc_current
-        from defrost_ai.models.weights import download_weights, models_dir
-        print(f"weights ready: {models_dir()}") if _weights_ok() else download_weights()
-        gc_current()
+        from defrost_ai.models.weights import WEIGHTS_URL, WEIGHTS_VERSION, download_weights, models_dir
+        if _weights_ok():
+            print(f"weights ready: {models_dir(download=False)}")
+            gc_current()
+            return 0
+        try:
+            download_weights(log=lambda m: print(m, flush=True))
+        except Exception as e:                           # noqa: BLE001  (a clear message instead of a traceback)
+            import urllib.error
+            releases = "https://github.com/Signaturi4/defrost-ai/releases"
+            if isinstance(e, urllib.error.HTTPError) and e.code == 404:
+                print(f"defrost: weights v{WEIGHTS_VERSION} are not published ({WEIGHTS_URL} returned 404).\n"
+                      f"  See {releases} for available weights; set DEFROST_MODELS to a local weights folder.",
+                      file=sys.stderr)
+            elif isinstance(e, urllib.error.URLError):
+                print(f"defrost: could not download the weights ({e.reason}). Check the network and retry: "
+                      f"defrost download-weights", file=sys.stderr)
+            else:
+                print(f"defrost: weights download failed: {e}", file=sys.stderr)
+            return 2
+        gc_current()                                     # merged caches of older weights
     elif a.cmd == "mcp":
         from defrost_ai.service.mcp_server import main as mcp_main
         mcp_main()

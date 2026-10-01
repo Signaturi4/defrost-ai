@@ -120,8 +120,10 @@ def status() -> dict:
     return {"dir": str(d), "version": v, "expected": WEIGHTS_VERSION, "matches": v == WEIGHTS_VERSION, "source": src}
 
 
-def download_weights(url: str = WEIGHTS_URL, sha256: str = WEIGHTS_SHA256, log=print) -> Path:
-    """Fetch the release archive (~130 MB) once, verify its sha256, unpack to ~/.cache/defrost-ai/models."""
+def download_weights(url: str | None = None, sha256: str | None = None, log=print) -> Path:
+    """Fetch the release archive (~130 MB) once, verify its sha256, unpack to ~/.cache/defrost-ai/models.
+    url/sha256 default to WEIGHTS_URL/WEIGHTS_SHA256, read at call time (not bound when the module loads)."""
+    url, sha256 = url or WEIGHTS_URL, sha256 or WEIGHTS_SHA256
     import shutil
     import tarfile
     import tempfile
