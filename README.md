@@ -1,8 +1,36 @@
-# defrost-ai
+<p align="center">
+  <img src="docs/brand/logo-256.png" width="112" height="112" alt="defrost-ai icon: a snowflake whose lower arms turn into code braces">
+</p>
 
-A local knowledge memory for codebases and document collections. You ask a question in plain words and get back
-the documentation sections that answer it, quoted with file and line numbers, together with the code each section
-names. Agents use it through MCP or the CLI; nothing leaves your machine and there is no per-query API cost.
+<h1 align="center">defrost-ai</h1>
+
+<p align="center">
+  <b>Docs your AI actually reads.</b><br>
+  Local, code-aware memory for Claude Code and any MCP client. One install, one question, cited answers.
+</p>
+
+<p align="center">
+  <a href="https://github.com/Signaturi4/defrost-ai/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Signaturi4/defrost-ai/ci.yml?branch=main&style=flat-square&label=ci&labelColor=0B0F14"></a>
+  <a href="https://github.com/Signaturi4/defrost-ai/releases"><img alt="Release" src="https://img.shields.io/github/v/release/Signaturi4/defrost-ai?style=flat-square&labelColor=0B0F14&color=2F6FEB"></a>
+  <a href="#license"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-2F6FEB?style=flat-square&labelColor=0B0F14"></a>
+  <img alt="Runs offline" src="https://img.shields.io/badge/runs-offline-2F6FEB?style=flat-square&labelColor=0B0F14">
+  <img alt="MCP server" src="https://img.shields.io/badge/MCP-server-F5A524?style=flat-square&labelColor=0B0F14">
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#use-with-claude-mcp-server--slash-commands">Claude</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#results">Results</a> ·
+  <a href="#weights">Weights</a> ·
+  <a href="docs/ARCHITECTURE.md">Architecture</a>
+</p>
+
+<br>
+
+Ask a question in plain words and get back the doc sections that answer it, quoted with file and line numbers,
+together with the code each section names. Agents use it through MCP or the CLI. Nothing leaves your machine and
+there is no per-query API cost.
 
 ```sh
 $ defrost search "how do I bind values to a structlog logger so they show up in every message?" -k auto
@@ -13,101 +41,15 @@ mode fast -> rerank
 log = structlog.get_logger().bind(x=42) and call log.info("some_event", y=23), it results in …
 ```
 
-It is a working research release. The package is `defrost-ai`, the CLI is `defrost`, and the models are
-**Defrost-Ret-B** and **Defrost-Rerank**. The memory is rebuilt from the docs and code on every commit instead of
-going stale in a wiki.
+| | |
+|---|---|
+| **Finds the answer, not the keyword** | The answering doc section is in context for **94%** of questions, against 6% for stock graphify ([E2E](docs/E2E_GRAPHIFY.md)) |
+| **Free and private** | Builds and searches on your laptop: no API calls, no tokens, no data leaving the machine |
+| **Stays fresh by itself** | Refreshes on merge to main or on a schedule, and re-embeds only what changed |
 
-> Upgrading from `kev-memory`: the old command name, the `KEV_MEMORY_*` variables and the `~/.kev-memory` folder
-> keep working until 1.3. `install.sh` replaces the old uv tool.
-
-## Why
-
-Code graphs such as [graphify](https://github.com/safishamsi/graphify) are good at structure: which function calls
-which, what lives in which module. They are weak at the question developers ask most: *"how do I…"*, *"why
-does…"*, *"what happens when…"*. The answer to those is usually a paragraph in the docs, and a keyword query over
-node labels rarely reaches it. On three repos our models never saw, graphify's query put the answering doc section
-in its context for **6%** of questions; this memory did for **94%** (details below).
-
-The usual fix is a hosted embedding API or an LLM pass over every document, which costs money on every refresh and
-sends your code out. This project trains small models instead (a 0.5B-parameter backbone) that run on a laptop.
-
-## Use cases
-
-- **Coding agents (Claude Code, Codex, Cursor…):** `memory_search` as an MCP tool next to graphify's graph tools.
-  The agent gets the doc section and the code it names in one call.
-- **RAG over internal docs:** handbooks, runbooks, ADRs, READMEs across many repos, with citations to path and lines.
-- **Company knowledge base, several domains at once:** register each repo or folder as a domain; one query searches
-  all of them and merges the results with the reranker.
-- **Always fresh:** graphify's git hooks refresh the memory after every commit and branch switch. Only changed
-  sections are re-embedded, and the previous build is kept for rollback.
-- **Reviewable updates and memory-grounded agents:** two [Shepherd](https://github.com/shepherd-agents/shepherd)
-  tasks keep a memory refresh as a reviewable result (accept, or discard and roll back) and answer questions from cited
-  context in a sandbox.
-
-## Built on
-
-| component | origin | used for |
-|---|---|---|
-| **Qwen2.5-0.5B** (rev `060db649`) | Alibaba Qwen, Apache-2.0 | the backbone of both models |
-| **MNTP + CGSA** recipe (KG-BiLM / LLM2Vec) | McGill NLP, MIT (`training/source/kg_bilm_experiments`) | turning the causal decoder into a bidirectional text encoder: masked next-token prediction, then contrastive sentence alignment |
-| **Defrost-Ret-B** (ours) | LoRA r16 on the backbone, contrastive training on 57k (query, passage, hard negative) rows: MS MARCO, NQ, HotpotQA, AllNLI, Quora, StackExchange + 9.7k tech-doc questions | dense retrieval of doc sections |
-| **Defrost-Rerank v2** (ours) | same backbone + LoRA + score head, listwise loss over 1 positive + 7 negatives (BM25, same-file siblings, changelog sections) | reordering the top 40 candidates |
-| **SQLite FTS5 BM25** | SQLite | keyword retrieval: exact identifiers, flags, error strings |
-| **`fast` policy** (ours) | no parameters | uses the cheap fusion when BM25 and the dense retriever agree on the top section, the reranker when they disagree (about half the queries) |
-| **adaptive k** (ours, optional `k="auto"`) | temperature-scaled dense confidence | sends 1–5 sections: 18% fewer context tokens at the same hit rate |
-| **graphify 0.4.32** | safishamsi/graphify, MIT | tree-sitter AST code graph, git hooks, MCP server, CLI. We add a patch (`integrations/graphify/`): `graphify memory …`, three MCP tools, the hook call, and a CLAUDE.md rule |
-| **Shepherd** (`shepherd-ai`) | shepherd-agents | sandboxed agent tasks with retained, reviewable outputs |
-| **RAGAS 0.4.3** (NVIDIA metrics) | explodinggradients/ragas | answer-level evaluation: accuracy, context relevance, groundedness |
-
-What is different from the parts it is built on:
-- **graphify** indexes code structure and, in its paid semantic tier, uses Claude to extract concepts from docs.
-  This project indexes every doc section locally, links each one to the exact code nodes it names (from graphify's
-  own AST graph), and ranks sections with trained models. It reuses graphify's graph, hooks and MCP server rather
-  than replacing them.
-- **Off-the-shelf embedders** (bge-small and similar) are trained on web text. Defrost-Ret-B starts from a backbone
-  adapted to technical prose and is trained on developer questions about documentation. Same-sized rerankers
-  trained on web data scored lower on our held-out repos (0.717 for bge-reranker-base vs 0.890 for Defrost-Rerank v2).
-
-## Results
-
-All numbers are nDCG@10 or RAGAS NVIDIA metrics, with paired-bootstrap 95% CIs. Every choice was made on dev
-splits, and the test splits were scored once. A 13-gram leakage gate separates all training data from every suite.
-Full protocol: [docs/EVALUATION.md](docs/EVALUATION.md). Everything that worked and did not:
-[docs/RESULTS.md](docs/RESULTS.md).
-
-**Locked test, against a plain BM25 section index** (175 questions; held-out OSS repos + a private 7-repo product):
-
-| | held-out repos (106) | private product repos (69) |
-|---|---|---|
-| nDCG@10, BM25 → `fast` | 0.703 → **0.840** | 0.684 → **0.835** |
-| RAGAS nv_mean (both), BM25 → `fast` (Defrost-Rerank v1) | 0.791 → **0.879** | |
-
-Defrost-Rerank v2 (default since weights v1.1.0) against v1 on the same locked test, paired: `fast` +0.024
-[+0.010, +0.041], `rerank` +0.037 [+0.019, +0.056]. The RAGAS row and the graphify comparison below were run with
-v1; they were not re-run.
-
-**End to end vs stock graphify, on three repos never used in training** (uvicorn, cattrs, structlog; 100 paired
-doc + code questions; [docs/E2E_GRAPHIFY.md](docs/E2E_GRAPHIFY.md)):
-
-| | stock graphify (paid semantic tier) | graphify + this memory |
-|---|---|---|
-| answering doc section in the context | 6% | **94%** |
-| answer quality from that context (RAGAS nv_mean) | 0.337 | **0.945** (+0.61 [+0.55, +0.66]) |
-| build cost for the 3 repos | $11.87 of Claude usage | $0, runs locally |
-| Claude Sonnet agent with file tools: accuracy | 0.906 | 0.922 (n.s.) |
-| Claude Sonnet agent: cost per question | $0.094 | **$0.071** (−25%, CI excludes 0) |
-
-The honest caveat: on repos this small, a strong agent with plain grep also scores 0.906 and is the cheapest arm.
-The memory matters most where grep stops working: large or multi-repo corpora, docs kept apart from code, weaker or
-cheaper answer models, and fixed context budgets.
-
-**Why not a pure knowledge graph?** The graph is reliable for structure and doc→code links, not as the place
-answers come from: instructions keep their conditions and exceptions in paragraphs. See
-[docs/DESIGN_NOTES.md](docs/DESIGN_NOTES.md), which also describes the embedding model.
-
-**Known weaknesses:** the dense retriever alone loses to BM25 on private product docs; the reranker takes 6–9 s
-per query on Apple GPU; a 568M public reranker still beats ours on long narrative prose (books 0.949 vs 0.902);
-multi-hop questions are unsolved.
+> [!NOTE]
+> Coming from `kev-memory`? The old command, the `KEV_MEMORY_*` variables and `~/.kev-memory` keep working until
+> 1.3. Run the install line again to switch to `defrost-ai`.
 
 ## Quick start
 
@@ -263,6 +205,117 @@ Modes: `fast` (default), `rerank` (most accurate, slowest), `dense`, `bm25` (exa
 
 FAQ / support chatbots: see [docs/FAQ_CHATBOT.md](docs/FAQ_CHATBOT.md) (use `hybrid` for real-time, about 45 ms).
 
+## How it works
+
+The agent keeps its usual loop (think, call a tool, observe). defrost-ai adds the tools for how/why questions,
+checks every doc hit against the code, asks you when the two disagree, and keeps working notes in a git repo inside
+your project. Mermaid sources and the rules behind each step: [docs/AGENT_LOOP.md](docs/AGENT_LOOP.md).
+
+<p align="center">
+  <a href="docs/img/agent_loop-1.svg"><img src="docs/img/agent_loop-1.svg" width="100%" alt="Architecture: the agent calls the defrost, graphify and file tools; the defrost service runs BM25 and Defrost-Ret-B, then Defrost-Rerank when they disagree; it reads the project memory in ~/.defrost-ai and the context repo in defrost-memory/; hooks and worktree workers keep both fresh"></a>
+  <br><sub>Where the system sits</sub>
+</p>
+
+<p align="center">
+  <a href="docs/img/agent_loop-2.svg"><img src="docs/img/agent_loop-2.svg" width="78%" alt="The loop: brief after /clear, pick memory_search, graphify or grep by question kind, verify hits against code according to doc trust, ask the user on a doc/code conflict and record the decision, update docs after code changes, hand off before /clear or compaction"></a>
+  <br><sub>The loop, step by step</sub>
+</p>
+
+## Why
+
+Code graphs such as [graphify](https://github.com/safishamsi/graphify) are good at structure: which function calls
+which, what lives in which module. They are weak at the question developers ask most: *"how do I…"*, *"why
+does…"*, *"what happens when…"*. The answer to those is usually a paragraph in the docs, and a keyword query over
+node labels rarely reaches it. On three repos our models never saw, graphify's query put the answering doc section
+in its context for **6%** of questions; this memory did for **94%** (details below).
+
+The usual fix is a hosted embedding API or an LLM pass over every document, which costs money on every refresh and
+sends your code out. This project trains small models instead (a 0.5B-parameter backbone) that run on a laptop.
+
+## Results
+
+All numbers are nDCG@10 or RAGAS NVIDIA metrics, with paired-bootstrap 95% CIs. Every choice was made on dev
+splits, and the test splits were scored once. A 13-gram leakage gate separates all training data from every suite.
+Full protocol: [docs/EVALUATION.md](docs/EVALUATION.md). Everything that worked and did not:
+[docs/RESULTS.md](docs/RESULTS.md).
+
+**Locked test, against a plain BM25 section index** (175 questions; held-out OSS repos + a private 7-repo product):
+
+| | held-out repos (106) | private product repos (69) |
+|---|---|---|
+| nDCG@10, BM25 → `fast` | 0.703 → **0.840** | 0.684 → **0.835** |
+| RAGAS nv_mean (both), BM25 → `fast` (Defrost-Rerank v1) | 0.791 → **0.879** | |
+
+Defrost-Rerank v2 (default since weights v1.1.0) against v1 on the same locked test, paired: `fast` +0.024
+[+0.010, +0.041], `rerank` +0.037 [+0.019, +0.056]. The RAGAS row and the graphify comparison below were run with
+v1; they were not re-run.
+
+**End to end vs stock graphify, on three repos never used in training** (uvicorn, cattrs, structlog; 100 paired
+doc + code questions; [docs/E2E_GRAPHIFY.md](docs/E2E_GRAPHIFY.md)):
+
+| | stock graphify (paid semantic tier) | graphify + this memory |
+|---|---|---|
+| answering doc section in the context | 6% | **94%** |
+| answer quality from that context (RAGAS nv_mean) | 0.337 | **0.945** (+0.61 [+0.55, +0.66]) |
+| build cost for the 3 repos | $11.87 of Claude usage | $0, runs locally |
+| Claude Sonnet agent with file tools: accuracy | 0.906 | 0.922 (n.s.) |
+| Claude Sonnet agent: cost per question | $0.094 | **$0.071** (−25%, CI excludes 0) |
+
+> [!IMPORTANT]
+> On repos this small, a strong agent with plain grep also scores 0.906 and is the cheapest arm.
+> The memory matters most where grep stops working: large or multi-repo corpora, docs kept apart from code, weaker
+> or cheaper answer models, and fixed context budgets.
+
+**Why not a pure knowledge graph?** The graph is reliable for structure and doc→code links, not as the place
+answers come from: instructions keep their conditions and exceptions in paragraphs. See
+[docs/DESIGN_NOTES.md](docs/DESIGN_NOTES.md), which also describes the embedding model.
+
+**Known weaknesses:** the dense retriever alone loses to BM25 on private product docs; the reranker takes 6–9 s
+per query on Apple GPU; a 568M public reranker still beats ours on long narrative prose (books 0.949 vs 0.902);
+multi-hop questions are unsolved.
+
+## Use cases
+
+- **Coding agents (Claude Code, Codex, Cursor…):** `memory_search` as an MCP tool next to graphify's graph tools.
+  The agent gets the doc section and the code it names in one call.
+- **RAG over internal docs:** handbooks, runbooks, ADRs, READMEs across many repos, with citations to path and lines.
+- **Company knowledge base, several domains at once:** register each repo or folder as a domain; one query searches
+  all of them and merges the results with the reranker.
+- **Always fresh:** graphify's git hooks refresh the memory after every commit and branch switch. Only changed
+  sections are re-embedded, and the previous build is kept for rollback.
+- **Reviewable updates and memory-grounded agents:** two [Shepherd](https://github.com/shepherd-agents/shepherd)
+  tasks keep a memory refresh as a reviewable result (accept, or discard and roll back) and answer questions from cited
+  context in a sandbox.
+
+## Built on
+
+<details>
+<summary>Models, recipes and tools this project uses</summary>
+
+| component | origin | used for |
+|---|---|---|
+| **Qwen2.5-0.5B** (rev `060db649`) | Alibaba Qwen, Apache-2.0 | the backbone of both models |
+| **MNTP + CGSA** recipe (KG-BiLM / LLM2Vec) | McGill NLP, MIT (`training/source/kg_bilm_experiments`) | turning the causal decoder into a bidirectional text encoder: masked next-token prediction, then contrastive sentence alignment |
+| **Defrost-Ret-B** (ours) | LoRA r16 on the backbone, contrastive training on 57k (query, passage, hard negative) rows: MS MARCO, NQ, HotpotQA, AllNLI, Quora, StackExchange + 9.7k tech-doc questions | dense retrieval of doc sections |
+| **Defrost-Rerank v2** (ours) | same backbone + LoRA + score head, listwise loss over 1 positive + 7 negatives (BM25, same-file siblings, changelog sections) | reordering the top 40 candidates |
+| **SQLite FTS5 BM25** | SQLite | keyword retrieval: exact identifiers, flags, error strings |
+| **`fast` policy** (ours) | no parameters | uses the cheap fusion when BM25 and the dense retriever agree on the top section, the reranker when they disagree (about half the queries) |
+| **adaptive k** (ours, optional `k="auto"`) | temperature-scaled dense confidence | sends 1–5 sections: 18% fewer context tokens at the same hit rate |
+| **graphify 0.4.32** | safishamsi/graphify, MIT | tree-sitter AST code graph, git hooks, MCP server, CLI. We add a patch (`integrations/graphify/`): `graphify memory …`, three MCP tools, the hook call, and a CLAUDE.md rule |
+| **Shepherd** (`shepherd-ai`) | shepherd-agents | sandboxed agent tasks with retained, reviewable outputs |
+| **RAGAS 0.4.3** (NVIDIA metrics) | explodinggradients/ragas | answer-level evaluation: accuracy, context relevance, groundedness |
+
+</details>
+
+What is different from the parts it is built on:
+- **graphify** indexes code structure and, in its paid semantic tier, uses Claude to extract concepts from docs.
+  This project indexes every doc section locally, links each one to the exact code nodes it names (from graphify's
+  own AST graph), and ranks sections with trained models. It reuses graphify's graph, hooks and MCP server rather
+  than replacing them.
+- **Off-the-shelf embedders** (bge-small and similar) are trained on web text. Defrost-Ret-B starts from a backbone
+  adapted to technical prose and is trained on developer questions about documentation. Same-sized rerankers
+  trained on web data scored lower on our held-out repos (0.717 for bge-reranker-base vs 0.890 for Defrost-Rerank v2).
+
 ## Writing docs the memory reads well
 
 `/defrost-setup` offers this kit, or run `defrost setup . --doc-rules` (the kit is
@@ -299,7 +352,8 @@ integrations/      the graphify patch
 benchmarks/        frozen question suites (held-out repos, books, e2e) + the e2e harness
 training/          training scripts and configs (MNTP -> CGSA -> Defrost-Ret-B / Defrost-Rerank), Kaggle notebooks
 scripts/           parity check, benchmark source fetcher, weight export, reranker efficiency
-docs/              EVALUATION, RESULTS, ARCHITECTURE, E2E_GRAPHIFY, DESIGN_NOTES, WRITING_FOR_EXTRACTION
+docs/              EVALUATION, RESULTS, ARCHITECTURE, AGENT_LOOP, E2E_GRAPHIFY, DESIGN_NOTES, WRITING_FOR_EXTRACTION
+docs/brand/        app icon, logo, favicons, social preview (BRAND.md has the rules)
 templates/         doc-rules kit for CLAUDE.md (rules, glossary, linter, Facts extractor)
 ```
 

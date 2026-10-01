@@ -41,7 +41,7 @@ flowchart LR
         P -- "no" --> S3["Defrost-Rerank v2<br/>MLX fp16 · ~1.5 s<br/>score cache"] --> K["adaptive k (1-5)<br/>+ trust header · verify in / ! flags<br/>+ resolved: decisions"]
     end
 
-    subgraph Stores["Local stores (outside your repo)"]
+    subgraph Stores["Local stores"]
         direction LR
         subgraph Store["Project memory · ~/.defrost-ai/&lt;domain&gt;"]
             D1[("knowledge.sqlite<br/>sections · links · FTS")]

@@ -106,8 +106,19 @@ Example, bad: *"Unleash the power of AI-native knowledge with defrost!"*
 | **Neutrals** | `#0B0F14` (ink), `#5B6573` (muted), `#F4F6F8` (frost background) | terminal-friendly dark and light modes |
 | **Charts** | Baseline in neutral gray, ours in thaw blue, direct labels, no legends, CIs as thin bars | same rules as the project's existing chart style |
 
-Deliverables to produce: SVG logo (mark + wordmark, light/dark), 1280×640 GitHub social preview ("Docs your AI
-actually reads" + the 94% vs 6% stat), favicon, a terminal GIF of `/defrost-setup` → first cited answer (≤ 20 s).
+Assets (in `docs/brand/`, rebuilt by `scripts/brand_assets.py` from `source-artwork.jpg`):
+
+| file | use |
+|---|---|
+| `app-icon-1024.png` | square, unmasked, full-bleed: Icon Composer, app stores (the system applies the corner mask, per the HIG) |
+| `logo-512.png`, `logo-256.png` | masked (continuous-corner squircle, transparent outside): README header, docs, slides |
+| `favicon.ico` (16–64), `favicon-32.png` | browser tab icon for a docs site |
+| `apple-touch-icon.png` | 180×180 unmasked, iOS home-screen bookmark |
+| `social-preview.png` | 1280×640 GitHub social preview: icon, wordmark, tagline, the 94% vs 6% stat |
+
+The icon carries its own depth and glow from the source artwork. For a native app, rebuild it in Icon Composer as
+layers (background gradient, white snowflake, amber braces) and let the system add highlights and the dark/tinted
+variants. Still to produce: a terminal GIF of `/defrost-setup` → first cited answer (≤ 20 s).
 
 ## 7. Messaging hierarchy (where each line goes)
 
