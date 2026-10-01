@@ -1,6 +1,6 @@
 [project]
 name = "kev-memory"   # project: defrost-ai
-version = "1.0.0"
+version = "1.1.0"
 description = "Hybrid-RAG knowledge memory for codebases and document collections: BM25 + Kev-Ret dense retrieval + Kev-Rerank, with doc-to-code links from graphify's AST graph."
 readme = "README.md"
 requires-python = ">=3.11"
