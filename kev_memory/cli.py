@@ -35,6 +35,7 @@ def main(argv=None):
     s.add_argument("--mode", default="fast"); s.add_argument("-k", type=lambda v: v if v == "auto" else int(v), default=5,
                    help='number of sections, or "auto" (adaptive, 1-5)'); s.add_argument("--json", action="store_true")
     s.add_argument("--merge", default="rerank", choices=["rerank", "rrf"])
+    s.add_argument("--local", action="store_true", help="load the models in this process instead of using the service")
     v = sub.add_parser("serve"); v.add_argument("--port", type=int, default=8765); v.add_argument("--host", default="127.0.0.1")
     e = sub.add_parser("benchmark"); e.add_argument("--suite", required=True); e.add_argument("--memory", required=True)
     e.add_argument("--split", default="dev"); e.add_argument("--out"); e.add_argument("--rankings")
@@ -79,9 +80,14 @@ def main(argv=None):
         from kev_memory.library import Library
         print(json.dumps(Library().domains(), indent=1))
     elif a.cmd == "search":
-        from kev_memory.library import Library
         from kev_memory.memory import Memory
-        res = Library().search(a.query, a.domain, a.mode, a.k, a.merge)
+        if a.local:                                      # load the models in this process (slow: every call)
+            from kev_memory.library import Library
+            res = Library().search(a.query, a.domain, a.mode, a.k, a.merge)
+        else:                                            # resident service: models stay loaded between calls
+            from kev_memory.service import client
+            client.ensure_service()
+            res = client.search(a.query, a.domain, a.mode, a.k, context=False, merge=a.merge)
         print(json.dumps(res, indent=1) if a.json else f"mode {res['mode']} -> {res['mode_used']}\n\n" + Memory.context(res))
     elif a.cmd == "serve":
         from kev_memory.service.http_server import serve
