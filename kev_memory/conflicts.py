@@ -1,8 +1,11 @@
 """Doc/code conflicts are decided by a person, not by the agent.
 
 When a doc section and the code disagree, the agent shows both sides and asks the user which is right. The answer is
-recorded here, one JSON line per decision in ~/.kev-memory/<domain>.conflicts.jsonl, so search results can show it
-and the same conflict is not asked again.
+recorded as one Markdown file per decision in the project's context repository
+(~/.kev-memory/<domain>.context/decisions/, see kev_memory/context_repo.py), one git commit each, so decisions are
+auditable, shareable through the repository's remote, searchable (domain `<domain>-context`), and shown on later
+search hits as a `resolved:` line, so the same conflict is not asked again. Decisions recorded before the context
+repository existed (~/.kev-memory/<domain>.conflicts.jsonl) are migrated on the first write.
 
     decision   meaning                                         what the agent does next
     code       the code is right, the doc is outdated          updates the doc section in the same change
@@ -13,10 +16,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from pathlib import Path
 
-HOME = Path(os.environ.get("KEV_MEMORY_HOME", "~/.kev-memory")).expanduser()
 DECISIONS = {
     "code": "code is right: update the doc",
     "doc": "doc is right: the code is a bug",
@@ -37,27 +40,60 @@ QUESTION = (
 
 
 def ledger(domain: str) -> Path:
-    return HOME / f"{domain}.conflicts.jsonl"
+    """Pre-context-repository log (read until migrated)."""
+    return Path(os.environ.get("KEV_MEMORY_HOME", "~/.kev-memory")).expanduser() / f"{domain}.conflicts.jsonl"
+
+
+def render_decision(row: dict) -> tuple[str, str]:
+    """(repo-relative path, Markdown) for one decision: readable body plus the exact record in a json block."""
+    from kev_memory.context_repo import render, slug
+    stamp = row["at"].replace("-", "").replace(":", "").replace("T", "-")
+    lines = f"L{row['doc_lines'][0]}-{row['doc_lines'][-1]}" if row.get("doc_lines") else ""
+    body = (f"# {row['meaning']}: {row['doc_path']} {lines}\n\n"
+            f"- **Doc:** `{row['doc_path']}` {lines}: {row.get('doc_says') or '(not recorded)'}\n"
+            f"- **Code:** `{row.get('code_ref') or '?'}`: {row.get('code_does') or '(not recorded)'}\n"
+            f"- **Decision (by the user, {row['at'][:10]}):** {row['meaning']}"
+            + (f"\n- **Note:** {row['note']}" if row.get("note") else "") +
+            f"\n\nFacts:\n- `{row['doc_path']}` {lines} → contradicts → `{row.get('code_ref') or 'the code'}` "
+            f"(found {row['at'][:10]})\n"
+            f"- `{row['doc_path']}` {lines} → user decision → {row['meaning']} ({row['at'][:10]})\n"
+            "\n```json\n" + json.dumps(row, indent=1) + "\n```\n")
+    return (f"decisions/{stamp}-{slug(row['doc_path'] + '-' + row['decision'])}.md",
+            render(f"{row['meaning']}: {row['doc_path']} {lines}".strip(),
+                   f"{row['doc_path']} {lines}: {row.get('doc_says') or ''} / code: {row.get('code_does') or ''}",
+                   body))
 
 
 def record(domain: str, doc_path: str, decision: str, doc_says: str = "", code_does: str = "", code_ref: str = "",
            doc_lines: list[int] | None = None, note: str = "") -> dict:
+    from kev_memory import context_repo
     if decision not in DECISIONS:
         raise ValueError(f"decision must be one of {sorted(DECISIONS)}, not {decision!r}")
     row = {"at": time.strftime("%Y-%m-%dT%H:%M:%S"), "domain": domain, "doc_path": doc_path,
            "doc_lines": doc_lines or [], "doc_says": doc_says, "code_ref": code_ref, "code_does": code_does,
            "decision": decision, "meaning": DECISIONS[decision], "note": note}
-    HOME.mkdir(parents=True, exist_ok=True)
-    with open(ledger(domain), "a") as f:
-        f.write(json.dumps(row) + "\n")
+    context_repo.ensure(domain)                                            # also migrates the old jsonl once
+    rel, text = render_decision(row)
+    row["commit"] = context_repo.commit(domain, {rel: text}, f"decision({decision}): {doc_path} - {DECISIONS[decision]}")
+    row["file"] = rel
     return row
 
 
 def load(domain: str) -> list[dict]:
-    f = ledger(domain)
-    if not f.exists():
-        return []
-    return [json.loads(line) for line in f.read_text().splitlines() if line.strip()]
+    """All decisions, oldest first. Read-only (never creates the repository): search calls this on every query."""
+    from kev_memory import context_repo
+    rows = []
+    for f in context_repo.files(domain, "decisions"):
+        m = re.search(r"```json\n(.*?)\n```", f.read_text(), re.S)
+        if m:
+            try:
+                rows.append(json.loads(m.group(1)) | {"file": f"decisions/{f.name}"})
+            except ValueError:
+                continue
+    old = ledger(domain)
+    if old.exists():
+        rows += [json.loads(line) for line in old.read_text().splitlines() if line.strip()]
+    return sorted(rows, key=lambda r: r["at"])
 
 
 def for_section(rows: list[dict], path: str, lines: list[int]) -> list[dict]:

@@ -1,15 +1,16 @@
 """Working memory for Claude Code sessions: handoff notes instead of long conversation history.
 
-A session writes a handoff note (goal, state, decisions, next steps, files) before `/clear`. The note is a small
-Markdown page in a per-project notes folder that is indexed as its own memory domain, `<domain>-notes`, so
-`memory_search` finds old decisions later. A SessionStart hook (matchers `clear` and `compact`) prints only the
-latest note's brief (goal + state + next steps + files), so the new context holds the task, not the transcript.
+A session writes a handoff note (goal, state, decisions, next steps, files) before `/clear`. Notes are files in the
+project's context repository (~/.kev-memory/<domain>.context/notes/, a git repo: see kev_memory/context_repo.py),
+one commit each, indexed as the search domain `<domain>-context`, so `memory_search` finds old decisions later.
+A SessionStart hook (matchers `clear` and `compact`) prints only the latest note's brief (goal + state + next steps +
+files) and the repository's root map, so the new context holds the task, not the transcript.
 
     kev-memory handoff --goal "..." --state "..." --next "..." --file path   # write a note (also MCP memory_handoff)
     kev-memory brief                                                         # what the hook prints ("" if no notes)
 
-Notes live in ~/.kev-memory/<domain>-notes/notes/, outside the repository: they hold transient session state
-(half-made decisions, failed attempts) that should not land in git or in the project's docs domain."""
+The context repository lives outside the project: it holds transient session state (half-made decisions, failed
+attempts) that should not land in the project's git history or in its docs domain."""
 from __future__ import annotations
 
 import json
@@ -28,15 +29,21 @@ def home() -> Path:
 
 
 def notes_domain(domain: str) -> str:
-    return f"{domain}-notes"
+    """Search domain that holds the notes (the context repository)."""
+    from kev_memory.context_repo import context_domain
+    return context_domain(domain)
 
 
 def notes_dir(domain: str) -> Path:
-    return home() / notes_domain(domain) / "notes"
+    from kev_memory.context_repo import repo_dir
+    return repo_dir(domain) / "notes"
 
 
 def domain_for(path: str | Path = ".") -> str | None:
-    """The registered domain whose component contains `path` (the deepest one), else None."""
+    """KEV_MEMORY_DOMAIN if set (background jobs in worktrees), else the registered domain whose component contains
+    `path` (the deepest one), else None."""
+    if os.environ.get("KEV_MEMORY_DOMAIN"):
+        return os.environ["KEV_MEMORY_DOMAIN"]
     p = Path(path).expanduser().resolve()
     best, depth = None, -1
     for ws in home().glob("*.workspace.json"):
@@ -44,7 +51,7 @@ def domain_for(path: str | Path = ".") -> str | None:
             data = json.loads(ws.read_text())
         except (OSError, ValueError):
             continue
-        if data["name"].endswith("-notes"):
+        if data["name"].endswith(("-notes", "-context")):
             continue
         for c in data.get("components", []):
             root = Path(c["path"]).expanduser().resolve()
@@ -62,29 +69,44 @@ def _bullets(items) -> str:
     return "\n".join(f"- {i.strip()}" for i in items if i and i.strip()) or "- (none)"
 
 
+def _fact_value(text: str) -> str:
+    return " ".join(str(text).replace("→", "->").replace(" -> ", " to ").split())[:120]
+
+
+def _facts(short: str, next_steps, files, stamp: str) -> str:
+    """Facts block (docs/WRITING_FOR_EXTRACTION.md): `- Subject → relation → Object (qualifier)` lines."""
+    steps = [next_steps] if isinstance(next_steps, str) else list(next_steps or [])
+    rows = [f"- {_fact_value(short)} → next step → {_fact_value(x)} (handoff {stamp})" for x in steps if x.strip()][:4]
+    rows += [f"- {_fact_value(short)} → touches → `{_fact_value(x)}`" for x in list(files or [])[:3]]
+    return (f"\n## Facts ({short})\nFacts:\n" + "\n".join(rows) + "\n") if rows else ""
+
+
 def write_handoff(domain: str, goal: str, state: str = "", decisions=(), next_steps=(), files=(),
-                  when: float | None = None) -> Path:
-    """One note = one page; every section names the goal, so each one makes sense alone in search results."""
+                  when: float | None = None, source: str = "") -> Path:
+    """One note = one file = one commit; every section names the goal, so each one makes sense alone in search."""
+    from kev_memory import context_repo
     when = time.time() if when is None else when
     stamp = time.strftime("%Y-%m-%d %H:%M", time.localtime(when))
     short = goal.strip().splitlines()[0][:80]
-    d = notes_dir(domain)
-    d.mkdir(parents=True, exist_ok=True)
-    f = d / f"{time.strftime('%Y%m%d-%H%M%S', time.localtime(when))}-{_slug(short)}.md"
-    f.write_text(
-        f"# Handoff {stamp}: {short}\n\n"
-        f"## Goal ({short})\n{goal.strip()}\n\n"
-        f"## State of the work ({short})\n{state.strip() or '(not given)'}\n\n"
-        f"## Decisions ({short})\n{_bullets(decisions)}\n\n"
-        f"## Next steps ({short})\n{_bullets(next_steps)}\n\n"
-        f"## Files ({short})\n{_bullets(f'`{x}`' for x in files) if files else '- (none)'}\n")
-    return f
+    rel = f"notes/{time.strftime('%Y%m%d-%H%M%S', time.localtime(when))}-{_slug(short)}.md"
+    body = (f"# Handoff {stamp}: {short}\n\n"
+            f"## Goal ({short})\n{goal.strip()}\n\n"
+            f"## State of the work ({short})\n{state.strip() or '(not given)'}\n\n"
+            f"## Decisions ({short})\n{_bullets(decisions)}\n\n"
+            f"## Next steps ({short})\n{_bullets(next_steps)}\n\n"
+            f"## Files ({short})\n{_bullets(f'`{x}`' for x in files) if files else '- (none)'}\n"
+            + _facts(short, next_steps, files, stamp))
+    context_repo.ensure(domain)
+    context_repo.commit(domain, {rel: context_repo.render(f"Handoff {stamp}: {short}",
+                                                          (source + " " if source else "") + goal.strip()[:200], body)},
+                        f"handoff: {short}" + (f" ({source})" if source else ""))
+    return context_repo.repo_dir(domain) / rel
 
 
 def latest(domain: str) -> Path | None:
-    d = notes_dir(domain)
-    notes = sorted(d.glob("*.md")) if d.exists() else []
-    return notes[-1] if notes else None
+    from kev_memory.context_repo import files
+    notes = files(domain, "notes")                                      # newest first
+    return notes[0] if notes else None
 
 
 def _section(text: str, name: str) -> str:
@@ -106,23 +128,18 @@ def brief(domain: str | None, max_words: int = BRIEF_WORDS) -> str:
     words = body.split(" ")
     if len(words) > max_words:
         body = " ".join(words[:max_words]) + " …"
+    from kev_memory.context_repo import map_brief
     return (f"[defrost-ai handoff, {f.stem[:15]}] Continue from this note, not from memory of the old conversation.\n"
             f"{body}\n"
             f"Older decisions and notes: memory_search(query, domains=[\"{notes_domain(domain)}\"]). "
-            f"Before ending or before /clear, write a new note with memory_handoff.")
+            f"Before ending or before /clear, write a new note with memory_handoff.\n\n"
+            f"[context repository map]\n{map_brief(domain, max_words=max(80, max_words // 3))}")
 
 
 def register_notes(domain: str) -> Path:
-    """Workspace + registry entry for the notes domain (docs only), so the normal builder indexes it."""
-    from kev_memory.library import register
-    home().mkdir(parents=True, exist_ok=True)
-    ws = home() / f"{notes_domain(domain)}.workspace.json"
-    if not ws.exists():
-        ws.write_text(json.dumps({"name": notes_domain(domain), "out": str(home() / notes_domain(domain) / "memory"),
-                                  "components": [{"name": notes_domain(domain), "path": str(notes_dir(domain))}]},
-                                 indent=1))
-    register(notes_domain(domain), ws, f"session handoff notes for {domain}")
-    return ws
+    """Workspace + registry entry for the context-repository domain, so the normal builder indexes it."""
+    from kev_memory.context_repo import register
+    return register(domain)
 
 
 def index(domain: str, wait: bool = False) -> dict:

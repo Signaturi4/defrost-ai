@@ -29,7 +29,8 @@ def test_domain_for_finds_the_repo_domain(home):
 def test_handoff_note_is_sectioned_and_self_contained(home):
     f = notes.write_handoff("demo", "Make search under 3 s", "phase 2 done", ["bf16 for reranker only"],
                             ["run health check"], ["kev_memory/models/reranker.py"], when=1_800_000_000)
-    secs = split_sections(f.read_text(), ".md")
+    from kev_memory.context_repo import parse
+    secs = split_sections(parse(f.read_text())[1], ".md")             # body after the name/description frontmatter
     names = [s[1][-1] for s in secs]
     assert names[:2] == ["Goal (Make search under 3 s)", "State of the work (Make search under 3 s)"]
     assert all("Make search under 3 s" in n for n in names)          # every section names the goal
@@ -41,17 +42,17 @@ def test_brief_uses_newest_note_and_is_capped(home):
     notes.write_handoff("demo", "new goal " + "word " * 600, "state", next_steps=["step one"], when=1_800_000_000)
     b = notes.brief("demo", max_words=50)
     assert "new goal" in b and "old goal" not in b
-    assert len(b.split()) < 50 + 40                                  # cap + fixed header/footer
-    assert 'domains=["demo-notes"]' in b
+    assert len(b.split()) < 50 + 40 + 80 + 5                         # note cap + header/footer + map cap
+    assert 'domains=["demo-context"]' in b
 
 
 def test_register_notes_creates_docs_only_domain(home):
     tmp, _ = home
     ws = json.loads(notes.register_notes("demo").read_text())
-    assert ws["name"] == "demo-notes" and ws["components"][0]["path"].endswith("demo-notes/notes")
+    assert ws["name"] == "demo-context" and ws["components"][0]["path"].endswith("demo.context")
     reg = json.loads((tmp / "km" / "domains.json").read_text())
-    assert "demo-notes" in reg["domains"]
-    assert notes.domain_for(notes.notes_dir("demo")) is None or notes.domain_for(notes.notes_dir("demo")) != "demo-notes"
+    assert "demo-context" in reg["domains"]
+    assert notes.domain_for(notes.notes_dir("demo")) != "demo-context"
 
 
 def test_hook_install_is_idempotent_and_removable(home):

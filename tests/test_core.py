@@ -199,7 +199,7 @@ def test_context_starts_with_the_doc_trust_line():
 def test_conflict_decisions_are_recorded_and_shown_on_matching_hits(tmp_path, monkeypatch):
     from kev_memory import conflicts
     from kev_memory.memory import Memory
-    monkeypatch.setattr(conflicts, "HOME", tmp_path)
+    monkeypatch.setenv("KEV_MEMORY_HOME", str(tmp_path))
     conflicts.record("crm", "docs/DEPLOY.md", "code", doc_says="CI runs kamal deploy", code_does="CI SSHes to the server",
                      code_ref=".github/workflows/deploy.yml:12", doc_lines=[10, 20], note="CI only triggers the server")
     assert conflicts.for_section(conflicts.load("crm"), "docs/DEPLOY.md", [15, 30])

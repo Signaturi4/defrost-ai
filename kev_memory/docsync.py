@@ -288,7 +288,9 @@ def fingerprint(p: dict) -> str:
 #   Stop        -> after the agent finishes editing: block the stop once per change set and ask it to document
 #   PreToolUse  -> `git commit` run by the agent: deny once per staged change set until docs are updated and staged
 # Outside Claude (git post-commit): write a pending doc task for the commit; the SessionStart hook shows pending
-# tasks, and with `--docs-auto` a budget-capped `claude -p "/document-changes <sha>"` writes them in the background.
+# tasks, and with `--docs-auto` a budget-capped `claude -p "/document-changes <sha>"` writes them in the background,
+# in a git worktree on branch defrost/docs/<sha> (kev_memory/worktree.py): the user's checkout is never touched; the
+# branch waits for review (`kev-memory context branches --repo .`) or is fast-forwarded with --docs-auto-merge.
 DOCS_TAG = "defrost-ai:docsync"
 MARK_START, MARK_END = "# >>> defrost-ai docsync >>>", "# <<< defrost-ai docsync <<<"
 COMMIT = re.compile(r"(^|[;&|]\s*|\s)git\s+(-C\s+\S+\s+)?commit\b")
@@ -393,7 +395,7 @@ def auto_command(sha: str, budget_usd: float = 0.5) -> list[str]:
             "--max-budget-usd", str(budget_usd)]
 
 
-def install_hooks(root: Path, auto: bool = False, budget_usd: float = 0.5) -> list[str]:
+def install_hooks(root: Path, auto: bool = False, budget_usd: float = 0.5, auto_merge: bool = False) -> list[str]:
     """Project .claude/settings.json (Stop + PreToolUse on Bash + SessionStart pending) and git post-commit."""
     import shlex
     import shutil
@@ -416,7 +418,8 @@ def install_hooks(root: Path, auto: bool = False, budget_usd: float = 0.5) -> li
     log = shlex.quote(str(notes.home() / "docsync.log"))
     run = f"{exe} docs-record HEAD >> {log} 2>&1"
     if auto:                                       # not inside Claude Code: its own commits are gated by PreToolUse
-        run += (f'\n  if [ -z "$CLAUDECODE" ]; then ( {exe} docs-auto HEAD --budget {budget_usd} >> {log} 2>&1 & ); fi')
+        merge = " --merge" if auto_merge else ""             # default: leave defrost/docs/<sha> for review
+        run += (f'\n  if [ -z "$CLAUDECODE" ]; then ( {exe} docs-auto HEAD --budget {budget_usd}{merge} >> {log} 2>&1 & ); fi')
     body = f"{MARK_START}\n# {DOCS_TAG}: record documentation follow-ups for this commit\n{{\n  {run}\n}}\n{MARK_END}\n"
     post = hdir / "post-commit"
     text = post.read_text() if post.exists() else "#!/bin/sh\n"
