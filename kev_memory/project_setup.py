@@ -272,14 +272,16 @@ def remove_memory_rule(root: Path) -> None:
 
 # ---- setup ----------------------------------------------------------------------------------------------------------
 def setup(path=".", domain=None, build="now", on_main_merge=False, every_hours=None, claude_hook=False,
-          doc_rules=False, claude=False, remove=False, log=print, handoff=False) -> dict:
+          doc_rules=False, claude=False, remove=False, log=print, handoff=False, docs_sync=False, docs_auto=False,
+          docs_budget=0.5) -> dict:
     root = Path(path).expanduser().resolve()
     name = domain or root.name.lower().replace(" ", "-")
     out = {"domain": name, "path": str(root)}
     if remove:
         remove_git_hooks(root); remove_schedule(name); remove_claude_hook(root); remove_memory_rule(root)
-        from kev_memory import notes
+        from kev_memory import docsync, notes
         notes.remove_hook(root)
+        docsync.remove_hooks(root)
         state_file(name).unlink(missing_ok=True)
         log(f"[{name}] triggers removed")
         return out | {"removed": True}
@@ -306,6 +308,10 @@ def setup(path=".", domain=None, build="now", on_main_merge=False, every_hours=N
         from kev_memory import notes
         notes.register_notes(name)
         trig["handoff"] = notes.install_hook(root)
+    if docs_sync:
+        from kev_memory import docsync
+        trig["docs_sync"] = {"auto": docs_auto, "budget_usd": docs_budget if docs_auto else 0,
+                             "files": docsync.install_hooks(root, auto=docs_auto, budget_usd=docs_budget)}
     state_file(name).write_text(json.dumps({"path": str(root), "installed": time.strftime("%Y-%m-%dT%H:%M:%S"),
                                             "triggers": trig}, indent=1))
     out["triggers"] = trig

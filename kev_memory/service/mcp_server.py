@@ -105,6 +105,15 @@ def build_server():
         return f"handoff saved: {f}\n{indexed}\nThe user can now run /clear; the new session starts from this note."
 
     @mcp.tool()
+    def memory_docs_plan(commit: str | None = None, staged: bool = False) -> str:
+        """Which doc sections describe the code changed in this repo (working tree vs HEAD by default, or the staged
+        changes, or one commit), which changed files have no doc yet, and which docs were already edited. Model-free.
+        Use it before writing docs for a change (/document-changes)."""
+        from kev_memory import docsync
+        p = docsync.plan(os.getcwd(), staged=staged, commit=commit)
+        return docsync.render(p, 30) or "docs up to date for this change"
+
+    @mcp.tool()
     def memory_brief(domain: str | None = None) -> str:
         """The latest handoff note of this project as a short brief (goal, state, next steps, files)."""
         from kev_memory import notes

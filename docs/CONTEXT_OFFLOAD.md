@@ -1,4 +1,4 @@
-# Context offload: continue from a handoff note, not from the whole conversation
+# Context offload and doc sync: agents keep their state and the docs in step with the code
 
 Status: prototype on branch `feature/context-offload` (2026-10-02). Unit tests pass. The A/B eval below is planned,
 not run.
@@ -67,6 +67,69 @@ Pieces:
 
 Checked end to end on an isolated home and port: a note was written and indexed, and `memory_search` on the
 notes domain returned the Decisions section first. The brief printed in 0.04 s.
+
+## Doc sync: document every change, after edits and on commit
+
+The memory is only as good as the docs. Agents change code and leave the docs behind; the next memory search then
+repeats the stale doc. Doc sync closes that loop with a model-free planner and three hooks.
+
+**Planner** (`kev_memory/docsync.py`, `kev-memory docs-plan`, MCP `memory_docs_plan`; 0.2–0.4 s on general_crm).
+From a diff (the working tree, the staged changes, or one commit) it lists:
+
+| list | how it is found |
+|---|---|
+| sections to update | the section links to a changed symbol (the symbol's span overlaps a changed hunk), or it names identifiers from the changed lines |
+| also linked | sections linked to a changed file only; shown as a count per file |
+| undocumented files | new or changed code with no linked section |
+| new names | env vars, CLI flags and `script:task` names on added lines that no doc section mentions |
+| already covered | doc files edited in the same change; their sections are not asked again |
+
+Links are checked before they are trusted. A path-like mention must be a suffix of the changed path, because
+graphify node ids collide for files with the same name. A bare lowercase word (`proxy`, `next`) is ignored.
+
+**Triggers** (opt-in, `kev-memory setup . --docs-sync`; project `.claude/settings.json` and the git `post-commit`):
+
+| moment | hook | effect |
+|---|---|---|
+| agent finishes editing | `Stop` → `kev-memory docs-hook stop` | blocks the stop once per change set with the plan and the `/document-changes` procedure |
+| agent runs `git commit` | `PreToolUse` (Bash) → `kev-memory docs-hook commit` | denies the commit once per staged change set; the agent updates and stages the docs, then commits again |
+| you commit outside Claude | git `post-commit` → `kev-memory docs-record` | records the plan as a pending task (< 1 s, no model) |
+| next Claude session | `SessionStart` (startup, resume) → `kev-memory docs-pending` | lists pending commits; Claude offers `/document-changes <sha>` |
+| optional: right after a commit outside Claude | `--docs-auto` | background `claude -p "/document-changes <sha>"`; edits docs only, never commits, `--max-budget-usd 0.5` per commit; skipped inside Claude (`$CLAUDECODE`) |
+
+Each gate asks at most once per change set and never blocks twice in a row (`stop_hook_active`), so the agent
+cannot loop. A broken hook exits 0 and never blocks work.
+
+**`/document-changes [sha | --staged]`** is the doc counterpart of `/handoff`:
+1. Plan with `kev-memory docs-plan`, then read the diff.
+2. Read the code before the docs; update only what the change made false.
+3. Document new commands, env vars and files in the page that already covers that area.
+4. Follow `docs/DOC_RULES.md`, the rules from `WRITING_FOR_EXTRACTION.md`.
+5. Mark doc/code contradictions as open questions instead of guessing.
+6. Run `doc_lint`.
+7. Resolve the pending task and write a handoff note.
+
+**Checked on a clone of general_crm** (read-only use of its built memory):
+- **Real commit `ae68e9b6` (beta gate):** the plan named `api.md` "Gates in `proxy.ts`" and DEPLOY_ENCORE ↔
+  `deploy/start-api.sh`. It listed 6 new files with no doc, and the new names `access-code:ensure`,
+  `BETA_ACCESS_CODE` and `BETA_GATE`. These are exactly the gaps both agents missed in the earlier memory-vs-grep
+  comparison.
+- **New env var:** a one-line edit adding `MIGRATE_ON_START` was blocked once at stop and once at commit, then
+  allowed.
+- **Commit from the terminal:** a pending task was recorded in 0.7 s and shown by the SessionStart hook.
+- **`--docs-auto` dry run:** printed the capped command. It was not run.
+
+### Doc-sync evaluation (not run: needs your go-ahead)
+
+- **Tasks:** 10 recent general_crm commits whose docs were updated later or never. Rebuild the memory at each
+  parent commit, then run `/document-changes <sha>` with Sonnet on a scratch clone.
+- **Metrics:**
+  - Recall of the doc sections a human later changed, from git history.
+  - Precision: sections edited that the change did not affect.
+  - `doc_lint` errors.
+  - Contradictions flagged.
+  - Cost per commit.
+- **Size:** about 10 × $0.30 ≈ **$3**, plus a 30-minute hand review of the 10 diffs.
 
 ## Limits
 
