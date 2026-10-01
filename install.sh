@@ -14,7 +14,7 @@ fi
 
 echo "==> installing defrost (uv tool, Python 3.12)"
 uv tool uninstall kev-memory >/dev/null 2>&1 || true            # the package was called kev-memory before 1.2
-uv tool install --force --reinstall --python 3.12 "defrost-ai[code,mcp] @ ${REPO}"
+uv tool install --force --reinstall --python 3.12 "defrost-ai[code,mcp,mac] @ ${REPO}"   # mac: MLX backend, Apple Silicon only (marker-gated)
 export PATH="$HOME/.local/bin:$PATH"
 
 echo "==> downloading weights (about 140 MB, sha256-checked) to ~/.cache/defrost-ai"
