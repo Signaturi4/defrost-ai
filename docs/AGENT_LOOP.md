@@ -48,7 +48,7 @@ flowchart LR
             D2[("section_vectors.npz")]
             D3[("code_graph.json<br/>graphify AST")]
         end
-        subgraph Ctx["Context repo (git) · &lt;domain&gt;.context"]
+        subgraph Ctx["Context repo (git) · &lt;project&gt;/defrost-memory"]
             C0["MEMORY.md map + core files"]
             C1["notes/ handoff notes"]
             C2["decisions/ conflict decisions"]
