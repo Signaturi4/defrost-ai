@@ -13,6 +13,13 @@ from kev_memory.models.backbone import bidirectional_mask, load_backbone, load_t
 from kev_memory.models.weights import RETRIEVAL_INSTRUCTION, device as pick_device, models_dir
 
 
+def _dtype(device) -> torch.dtype:
+    """bf16 on Apple GPU / CUDA (2x less memory traffic; Qwen overflows in fp16, so never fp16), fp32 on CPU.
+    KEV_RERANK_DTYPE=fp32|bf16 overrides."""
+    name = os.environ.get("KEV_RERANK_DTYPE") or ("bf16" if device.type in ("mps", "cuda") else "fp32")
+    return {"bf16": torch.bfloat16, "fp32": torch.float32}[name]
+
+
 class _ScoreHead(torch.nn.Module):
     def __init__(self, backbone, dim):
         super().__init__()
@@ -21,10 +28,11 @@ class _ScoreHead(torch.nn.Module):
         self.head = torch.nn.Linear(dim, 1)
 
     def forward(self, ids, att):
-        h = self.backbone(input_ids=ids, attention_mask=bidirectional_mask(att.bool())).last_hidden_state
-        m = att.to(h.dtype)[..., None]
+        mask = bidirectional_mask(att.bool(), dtype=self.backbone.dtype)    # padded keys blocked; no row fully masked
+        h = self.backbone(input_ids=ids, attention_mask=mask).last_hidden_state.float()
+        m = att.float()[..., None]                                          # pool + head in fp32 at any backbone dtype
         v = (h * m).sum(1) / m.sum(1).clamp(min=1)
-        return self.head(self.norm(v.float())).squeeze(-1)
+        return self.head(self.norm(v)).squeeze(-1)
 
 
 class KevReranker:
@@ -38,6 +46,8 @@ class KevReranker:
         self.model.norm.load_state_dict(state["norm"])
         self.model.head.load_state_dict(state["head"])
         self.model.to(self.device).eval()
+        self.dtype = _dtype(self.device)
+        self.model.backbone.to(self.dtype)                                  # LayerNorm + Linear head stay fp32
         self.max_query, self.max_doc = max_query, max_doc
         self.token_budget = int(os.environ.get("KEV_RERANK_TOKEN_BUDGET", 2048))   # padded tokens per pass (flat 512-2048 on MPS fp32; larger is slower)
 
