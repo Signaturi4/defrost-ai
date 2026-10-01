@@ -5,69 +5,94 @@ kinds of tools. Documentation sections come from the memory: hybrid search, then
 the files hold the truth about the code. Working notes carry state across `/clear`, and doc sync keeps the docs
 current. The graph is for navigation; the answer always comes from a doc section, the code, or both.
 
-Rendered copies for slides and the README: [architecture](img/agent_loop-1.svg), [loop](img/agent_loop-2.svg).
+Rendered copies for slides and the README: architecture ([svg](img/agent_loop-1.svg), [png](img/agent_loop-1.png)), loop ([svg](img/agent_loop-2.svg), [png](img/agent_loop-2.png)).
+
+The context repo, its worktree workers and the PreCompact handoff are on branch `feature/context-repo` (not merged yet); the conflict step (human in the loop) is on `main`.
 
 ## 1. Where the system sits
 
 ```mermaid
+---
+config:
+  layout: elk
+  elk:
+    mergeEdges: true
+    nodePlacementStrategy: BRANDES_KOEPF
+---
 flowchart LR
-    subgraph Agent["Agent (Claude Code, Cursor, any MCP client)"]
-        T[Thought] --> A[Action: tool call]
-        A --> O[Observation]
-        O --> T
+    subgraph Agent["Agent (Claude Code, Cursor, any MCP client): Thought → Action → Observation"]
+        direction LR
+        T[Thought] --> A[Action: tool call] --> O[Observation] --> T
     end
+    U(("You<br/>human in the loop"))
 
     subgraph MCP["MCP servers (thin stdio)"]
-        M1["defrost:<br/>memory_search · memory_docs_for<br/>memory_docs_plan · memory_handoff · memory_brief<br/>memory_update · memory_domains"]
-        M2["graphify:<br/>query_graph · get_node · get_neighbors<br/>shortest_path · god_nodes"]
-        F["File tools:<br/>Read · Grep · Glob · Bash"]
+        direction LR
+        M1["defrost<br/>memory_search · memory_docs_for · memory_docs_plan<br/>memory_resolve_conflict · memory_conflicts<br/>memory_handoff · memory_brief · memory_update"]
+        M2["graphify<br/>query_graph · get_neighbors<br/>shortest_path · god_nodes"]
+        F["File tools<br/>Read · Grep · Glob · Bash"]
     end
 
     subgraph Service["kev-memory service (resident, 127.0.0.1:8765)"]
-        S1["BM25<br/>SQLite FTS5 · ~2 ms"]
-        S2["Kev-Ret-B<br/>dense query vector · ~0.1 s"]
-        P{"fast policy:<br/>top-1 agrees?"}
-        S3["Kev-Rerank v2<br/>MLX fp16 · ~1.5 s<br/>score cache"]
-        K["adaptive k (1-5)<br/>+ trust header<br/>+ verify in / ! flags"]
-        S1 --> P
-        S2 --> P
+        direction LR
+        S1["BM25<br/>FTS5 · ~2 ms"] --> P{"fast policy:<br/>top-1 agrees?"}
+        S2["Kev-Ret-B<br/>query vector · ~0.1 s"] --> P
         P -- "yes: hybrid" --> K
-        P -- "no" --> S3 --> K
+        P -- "no" --> S3["Kev-Rerank v2<br/>MLX fp16 · ~1.5 s<br/>score cache"] --> K["adaptive k (1-5)<br/>+ trust header · verify in / ! flags<br/>+ resolved: decisions"]
     end
 
-    subgraph Store["Per-project memory (~/.kev-memory/&lt;domain&gt;)"]
-        D1[("knowledge.sqlite<br/>sections · links · FTS")]
-        D2[("section_vectors.npz")]
-        D3[("code_graph.json<br/>(graphify AST)")]
-        D4[("&lt;domain&gt;-notes<br/>handoff notes")]
+    subgraph Stores["Local stores (outside your repo)"]
+        direction LR
+        subgraph Store["Project memory · ~/.kev-memory/&lt;domain&gt;"]
+            D1[("knowledge.sqlite<br/>sections · links · FTS")]
+            D2[("section_vectors.npz")]
+            D3[("code_graph.json<br/>graphify AST")]
+        end
+        subgraph Ctx["Context repo (git) · &lt;domain&gt;.context"]
+            C0["MEMORY.md map + core files"]
+            C1["notes/ handoff notes"]
+            C2["decisions/ conflict decisions"]
+            C3["pre-commit hook:<br/>depth · size · frontmatter · read_only"]
+        end
     end
 
     subgraph Repo["Your repository"]
+        direction LR
         R1["docs/ · README · CLAUDE.md"]
         R2["code: backend (core) · frontend · config/CI"]
-        R3["git hooks · Claude hooks"]
+        R3["git hooks · Claude hooks<br/>SessionStart · PreCompact · Stop"]
     end
 
-    A -->|how / why / what happens| M1
-    A -->|structure, callers, paths| M2
-    A -->|exact code, verify| F
+    subgraph Workers["Background workers (git worktrees)"]
+        direction LR
+        W1["doc-sync worker<br/>branch defrost/docs/&lt;sha&gt; → review"]
+        W2["context defrag<br/>indexes · split · archive → fast-forward"]
+    end
+
+    A -->|"how / why"| M1
+    A -->|"structure"| M2
+    A -->|"exact code"| F
+    A <-->|"doc ≠ code: AskUserQuestion<br/>→ code right / doc right / no conflict / open"| U
     M1 --> Service
-    S1 -. reads .-> D1
-    S2 -. reads .-> D2
-    K -->|"doc sections + linked core code"| O
+    K -->|"sections + linked core code"| O
+    Service -. reads .-> Store
+    Service -. "reads (&lt;domain&gt;-context)" .-> Ctx
     M2 --> D3
-    F --> R1 & R2
-    R3 -->|"merge/commit to main:<br/>incremental refresh"| Store
-    R1 & R2 -->|"build: sections, vectors,<br/>doc→code links"| Store
-    M1 -.->|handoff / brief| D4
+    M1 -->|"one commit per decision / note"| Ctx
+    F --> Repo
+    Repo -->|"build + incremental refresh<br/>on merge/commit to main"| Store
+    R3 -->|"PreCompact: extractive handoff (no LLM)"| C1
+    R3 -->|"commit outside Claude"| W1
+    W1 -->|"review, then merge"| R1
+    W2 --> Ctx
 ```
 
 ## 2. The loop, step by step
 
 ```mermaid
 flowchart TD
-    Q(["User task"]) --> B{"New session<br/>after /clear?"}
-    B -- yes --> BR["memory_brief:<br/>goal, state, next steps"] --> T1
+    Q(["User task"]) --> B{"New session<br/>after /clear or compaction?"}
+    B -- yes --> BR["memory_brief: context repo map,<br/>core files, latest handoff note"] --> T1
     B -- no --> T1["Thought: what do I need to know?"]
 
     T1 --> KIND{"Kind of question"}
@@ -75,7 +100,7 @@ flowchart TD
     KIND -- "where is X defined / called<br/>(structure)" --> G["graphify: query_graph /<br/>get_neighbors / shortest_path"]
     KIND -- "exact string, flag, error text" --> GR["Grep / memory_search mode=bm25"]
 
-    MS --> OBS["Observation: 1-5 sections<br/>path:Lstart-end + linked code<br/>+ verify in: + ! flags"]
+    MS --> OBS["Observation: 1-5 sections<br/>path:Lstart-end + linked code<br/>+ verify in: + ! flags + resolved:"]
     OBS --> TRUST{"doc trust<br/>(project setting)"}
     TRUST -- "low (fast-changing code)" --> V["Read the verify-in files<br/>(core code first)"]
     TRUST -- "high (reliable docs)" --> FLAG{"! stale or<br/>conflict flag?"}
@@ -83,7 +108,15 @@ flowchart TD
     FLAG -- no --> ANS
     V --> CMP{"Docs and code agree?"}
     CMP -- yes --> ANS
-    CMP -- no --> CONF["Ask the user: code right,<br/>doc right, no conflict, or open?<br/>record with memory_resolve_conflict"] --> ANS
+    CMP -- no --> RES{"Already decided?<br/>(resolved: line)"}
+    RES -- yes --> FOL["Follow the recorded decision"] --> ANS
+    RES -- no --> ASK[/"Ask the user (AskUserQuestion):<br/>both sides with citations"/]
+    ASK --> REC["memory_resolve_conflict:<br/>one commit in decisions/"]
+    REC --> DEC{"User's decision"}
+    DEC -- "code is right" --> FIXDOC["Update the doc section"] --> ANS
+    DEC -- "doc is right" --> BUG["Report the code as a bug<br/>(change code only if asked)"] --> ANS
+    DEC -- "not a conflict" --> ANS
+    DEC -- "not sure" --> OPEN["Open-question note<br/>in the doc section"] --> ANS
     G --> GO["Observation: nodes + edges"] --> V
     GR --> V
 
@@ -94,7 +127,11 @@ flowchart TD
     DP --> DOC["Update those sections (DOC_RULES),<br/>document new env vars / commands / files"]
     DOC --> COMMIT["git commit on main"] --> HOOK["post-commit hook:<br/>refresh --if-changed (seconds)"]
     HOOK --> OUT
-    OUT -.->|"long task / context full"| HO["memory_handoff:<br/>goal, state, decisions, next steps"] -.-> CLR["/clear"] -.-> B
+    COMMIT -.->|"commit made outside Claude"| WK["doc-sync worker in a worktree:<br/>branch defrost/docs/&lt;sha&gt; for review"]
+    OUT -.->|"long task: /handoff"| HO["memory_handoff: goal, state,<br/>decisions, next steps → notes/"]
+    OUT -.->|"context full: PreCompact hook"| XH["extractive handoff from the<br/>transcript (no LLM) → notes/"]
+    HO -.-> CLR["/clear"] -.-> B
+    XH -.-> B
 ```
 
 ## 3. Rules the loop follows
