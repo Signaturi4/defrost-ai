@@ -1,6 +1,6 @@
 # Latency plan: under 3 s per search, same quality
 
-Status: plan only (2026-10-02). Nothing below is implemented or quality-tested yet.
+Status (2026-10-02): steps 1–5 implemented and merged; step 6 not applied. Results in §7.
 
 ## 1. Where the time goes today
 
@@ -102,3 +102,34 @@ read once, at the end.
 - **Thermals.** Long batch jobs on fanless Macs throttle. Report a p90 after a 5-minute run.
 - **Dependency weight.** MLX is about 30 MB and macOS-only, so make it an optional extra (`[mac]`). `install.sh` adds
   it automatically on macOS.
+
+## 7. Results (steps 1–5)
+
+Latency, Apple M5, Kev-Rerank v2, warm (`scripts/health_check.py`, `scripts/profile_latency.py`):
+
+| step | change | warm `rerank` query | cold model load |
+|---|---|---|---|
+| 0 | baseline (torch MPS fp32, LoRA merged at start) | 7.7 s | 22.7 s + 4.9 s |
+| 1 | merged-weights cache, service warm-up | 7.3 s | 6.5 s + 3.6 s |
+| 2 | length-sorted, token-budget batches | 5.2–5.9 s | same |
+| 3 | bf16 on MPS (torch path) | 2.3 s | same |
+| 4 | MLX backend, fp16 (fp32 fallback on overflow) | **1.7 s** | 5.7 s + 1.8 s |
+| 5 | score cache | repeated query 38 ms | — |
+
+Through the resident service on general_crm: 1.2–1.8 s per search (agent run before: 10.6 s). The CLI
+`kev-memory search` now uses the service: 1.4 s per call after the first (before: 103–168 s, models reloaded per call).
+
+Findings:
+- On MPS fp32, larger batches were slower; the gain of step 2 came from removing padding (flat for 512–2048 tokens).
+- MLX: the forward is matmul-bound at ~6 TFLOP/s; mask type, `mx.compile` and batch shape made no difference.
+  fp16 matched bf16's speed but stayed ~8× closer to fp32 (max score diff 0.02–0.03 vs 0.16–0.29), so fp16 is the default.
+
+Quality gate (default path MLX fp16 vs torch fp32 reference, per-question nDCG@10, paired bootstrap, local):
+
+| suite | n | `rerank` | `fast` | `all` | questions that differ |
+|---|---|---|---|---|---|
+| heldout dev | 44 | 0.890 = 0.890 | 0.887 = 0.887 | 0.820 = 0.820 | 0 |
+| books | 39 | 0.902 vs 0.902 (−0.0003) | 0.902 vs 0.902 (−0.0003) | 0.908 vs 0.910 (−0.0011) | 1 |
+| heldout test (locked, read once) | 106 | 0.846 = 0.846 | 0.840 = 0.840 | 0.854 = 0.854 | 0 |
+
+All deltas are inside the ±0.005 gate. Step 6 (smaller pool, 8-bit, shorter sections) is not applied.
