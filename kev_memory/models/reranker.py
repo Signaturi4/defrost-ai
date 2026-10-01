@@ -3,6 +3,7 @@
 pooled states gives the score. Trained listwise (1 positive vs 7 BM25 negatives)."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import numpy as np
@@ -38,21 +39,45 @@ class KevReranker:
         self.model.head.load_state_dict(state["head"])
         self.model.to(self.device).eval()
         self.max_query, self.max_doc = max_query, max_doc
+        self.token_budget = int(os.environ.get("KEV_RERANK_TOKEN_BUDGET", 2048))   # padded tokens per pass (flat 512-2048 on MPS fp32; larger is slower)
 
-    def _pairs(self, query: str, texts: list[str]):
+    def _encode_pairs(self, query: str, texts: list[str]) -> list[list[int]]:
+        """Token ids of "<instruction>: <query>\n\n<section>" for every text (query <= 64, section <= 384 tokens)."""
         head = self.tok(f"{RETRIEVAL_INSTRUCTION}: ", add_special_tokens=False)["input_ids"]
         q = self.tok(query, add_special_tokens=False)["input_ids"][:self.max_query]
-        seqs = [head + q + self.tok("\n\n" + t, add_special_tokens=False)["input_ids"][:self.max_doc] for t in texts]
+        docs = self.tok(["\n\n" + t for t in texts], add_special_tokens=False)["input_ids"]
+        return [head + q + d[:self.max_doc] for d in docs]
+
+    def _pad(self, seqs: list[list[int]]):
         L = max(len(s) for s in seqs)
         pad = self.tok.pad_token_id if self.tok.pad_token_id is not None else 0
         ids = torch.tensor([s + [pad] * (L - len(s)) for s in seqs])
         att = torch.tensor([[1] * len(s) + [0] * (L - len(s)) for s in seqs])
         return ids, att
 
+    def _pairs(self, query: str, texts: list[str]):
+        return self._pad(self._encode_pairs(query, texts))
+
     @torch.no_grad()
-    def score(self, query: str, texts: list[str], batch_size: int = 8) -> np.ndarray:
-        out = []
-        for b in range(0, len(texts), batch_size):
-            ids, att = self._pairs(query, texts[b:b + batch_size])
-            out.append(self.model(ids.to(self.device), att.to(self.device)).float().cpu().numpy())
-        return np.concatenate(out) if out else np.zeros(0)
+    def score(self, query: str, texts: list[str], batch_size: int | None = None) -> np.ndarray:
+        """Pairs are sorted by length and cut into batches of at most `token_budget` padded tokens, so short sections
+        are not padded to the longest one; scores come back in input order. One host sync per query."""
+        if not texts:
+            return np.zeros(0)
+        seqs = self._encode_pairs(query, texts)
+        order = sorted(range(len(seqs)), key=lambda i: len(seqs[i]))
+        batches, cur = [], []
+        for i in order:
+            n = len(cur) + 1
+            if cur and (n * len(seqs[i]) > self.token_budget or (batch_size and n > batch_size)):
+                batches.append(cur); cur = []
+            cur.append(i)
+        batches.append(cur)
+        outs = []
+        for idx in batches:
+            ids, att = self._pad([seqs[i] for i in idx])
+            outs.append(self.model(ids.to(self.device), att.to(self.device)))
+        flat = torch.cat(outs).float().cpu().numpy()
+        out = np.empty(len(texts), dtype=flat.dtype)
+        out[[i for idx in batches for i in idx]] = flat
+        return out
