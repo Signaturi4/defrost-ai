@@ -1,0 +1,42 @@
+# Core checks that need no model weights, no GPU and no running service: unit tests, CLI import, shell syntax.
+# Installs only numpy + pytest (no torch), so it runs in about a minute.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install test dependencies (no torch)
+        run: python -m pip install --upgrade pip && python -m pip install "numpy>=1.26" "pytest>=8"
+      - name: Unit tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: python -m pytest -q tests
+      - name: CLI and service client import without ML dependencies
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python -m kev_memory.cli --help > /dev/null
+          python -c "import kev_memory, kev_memory.project_setup, kev_memory.service.client; print(kev_memory.build_id())"
+      - name: Shell scripts parse
+        run: |
+          bash -n install.sh
+          bash -n kev_memory/assets/doc_rules/install.sh
