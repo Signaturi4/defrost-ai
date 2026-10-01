@@ -49,6 +49,8 @@ def main(argv=None):
     st.add_argument("--claude-hook", action="store_true", help="Claude Code SessionStart hook: refresh when stale")
     st.add_argument("--doc-rules", action="store_true", help="add the doc-writing rules block to CLAUDE.md")
     st.add_argument("--claude", action="store_true", help="install slash commands + register the MCP server")
+    st.add_argument("--handoff", action="store_true",
+                    help="Claude Code: after /clear or compaction, start from the latest handoff note (project hook)")
     st.add_argument("--remove-triggers", action="store_true")
     rf = sub.add_parser("refresh"); rf.add_argument("domain"); rf.add_argument("--if-changed", action="store_true")
     ss = sub.add_parser("status"); ss.add_argument("domain", nargs="?")
@@ -58,6 +60,13 @@ def main(argv=None):
     c.add_argument("action", choices=["install"]); c.add_argument("project", nargs="?", default=".")
     c.add_argument("--user", action="store_true", help="install for all projects (~/.claude/commands, user scope)")
     c.add_argument("--no-mcp", action="store_true", help="only copy the slash commands")
+    ho = sub.add_parser("handoff", help="write a session handoff note (what the SessionStart hook shows after /clear)")
+    ho.add_argument("--goal", required=True); ho.add_argument("--state", default="")
+    ho.add_argument("--decision", action="append", default=[]); ho.add_argument("--next", action="append", default=[])
+    ho.add_argument("--file", action="append", default=[]); ho.add_argument("--domain")
+    ho.add_argument("--no-index", action="store_true")
+    br = sub.add_parser("brief", help="print the latest handoff brief for this directory (hook command; no models)")
+    br.add_argument("--domain")
     a = ap.parse_args(argv)
 
     if a.cmd == "build":
@@ -101,7 +110,7 @@ def main(argv=None):
     elif a.cmd == "setup":
         from kev_memory.project_setup import setup
         res = setup(a.path, a.domain, a.build, a.on_main_merge, a.every_hours, a.claude_hook, a.doc_rules, a.claude,
-                    a.remove_triggers)
+                    a.remove_triggers, handoff=a.handoff)
         print(json.dumps(res, indent=1, default=str))
     elif a.cmd == "refresh":
         from kev_memory.project_setup import refresh
@@ -120,6 +129,20 @@ def main(argv=None):
         from kev_memory.integrations.claude import install
         for line in install(Path(a.project), user=a.user, register_mcp=not a.no_mcp):
             print(line)
+    elif a.cmd == "handoff":
+        from kev_memory import notes
+        name = a.domain or notes.domain_for(Path.cwd())
+        if not name:
+            print("no memory domain for this directory (run kev-memory setup . first, or pass --domain)")
+            return 1
+        print(notes.write_handoff(name, a.goal, a.state, a.decision, a.next, a.file))
+        if not a.no_index:
+            print(json.dumps(notes.index(name, wait=False)))
+    elif a.cmd == "brief":
+        from kev_memory import notes
+        text = notes.brief(a.domain or notes.domain_for(Path.cwd()))
+        if text:
+            print(text)
     elif a.cmd == "verify-weights":
         from kev_memory.models.weights import models_dir, verify
         res = verify()

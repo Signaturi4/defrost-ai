@@ -1,0 +1,115 @@
+# Context offload: continue from a handoff note, not from the whole conversation
+
+Status: prototype on branch `feature/context-offload` (2026-10-02). Unit tests pass. The A/B eval below is planned,
+not run.
+
+## The problem
+
+A long Claude Code session carries its whole history: tool outputs, dead ends, superseded plans. That costs tokens
+on every turn, and the model can lose the thread. Our agent eval showed memory search is cheaper than grep for one
+question. This extends the idea to the session itself: write the working state into the memory, start a fresh
+context, and give it only the goal and the task context.
+
+## What Claude Code offers (and what actually shrinks context)
+
+Sources: code.claude.com docs (hooks, hooks-guide, how-claude-code-works, glossary), via Context7.
+
+| mechanism | effect on context | notes |
+|---|---|---|
+| `/clear` | **removes** the history | a `SessionStart` hook with matcher `clear` fires afterwards; its stdout is added to the new context |
+| `/compact [focus]`, auto-compaction | **replaces** history with a model-written summary (lossy) | "Compact Instructions" in CLAUDE.md steer it; a `SessionStart` hook with matcher `compact` fires after |
+| `PreCompact` hook | none | it only receives `trigger` and `custom_instructions`; it cannot write or change the summary |
+| subagents | **isolate** work; only the result comes back | good for searches and long reads |
+| MCP tools | definitions deferred by default; output stays in context | only names and server instructions are loaded up front |
+| CLAUDE.md, imports, auto memory | **add** to every request | survive compaction; keep them short |
+| `UserPromptSubmit` additional context | **adds** on every turn | not used here, to avoid adding text on every turn |
+
+No hook can replace the history in the middle of a session. Only `/clear` and `/compact` shrink it. So the design
+makes `/clear` safe: the state goes into a note first, and the hook brings back only that note.
+
+## Design
+
+```
+ long session ──/handoff──► memory_handoff(goal, state, decisions, next_steps, files)
+                              │ writes ~/.kev-memory/<domain>-notes/notes/<time>-<slug>.md
+                              │ indexes it incrementally as domain "<domain>-notes"
+              ──/clear────► SessionStart hook (matcher clear|compact): `kev-memory brief`
+                              │ prints goal + state + next steps + files of the newest note (≤ 350 words)
+ fresh session ◄────────────┘ older decisions: memory_search(q, domains=["<domain>-notes"])
+```
+
+Decisions:
+- **Notes live outside the repository**, in `~/.kev-memory/<domain>-notes/`. They hold transient session state:
+  half-made decisions, failed attempts, personal constraints. That should not land in git or in the project's docs
+  domain. Decisions that last belong in the real docs (the doc rules already ask for that). The notes are a
+  separate domain, so searches can include or exclude them.
+- **One note is one page, and every section names the goal.** Each section makes sense alone in search results,
+  following the same rules as `docs/WRITING_FOR_EXTRACTION.md`. The sections are Goal, State of the work,
+  Decisions, Next steps and Files.
+- **The brief is capped and model-free.** `kev-memory brief` reads one file: no torch, about 0.04 s. It works as a
+  hook even when the service is down.
+- **The hook runs on `clear` and `compact`.** After an auto-compaction, the structured note sits next to the lossy
+  summary as an anchor. It does not fire at startup or on resume, so a normal new session is unchanged.
+- **Opt-in, project-level only.** Enable it with `kev-memory setup . --handoff`. That writes the hook into the
+  project's `.claude/settings.json`, never into `~/.claude/settings.json`. `--remove-triggers` removes it.
+- **The model writes the note.** `/handoff` asks for about 300 words in a fixed shape. That is the same trust as
+  `/compact`, but the output is structured, searchable, and kept across sessions.
+
+Pieces:
+
+| piece | where |
+|---|---|
+| note writing, brief, notes domain, hook install | `kev_memory/notes.py` |
+| MCP tools `memory_handoff`, `memory_brief` | `kev_memory/service/mcp_server.py` |
+| CLI `kev-memory handoff`, `kev-memory brief`, `setup --handoff` | `kev_memory/cli.py`, `project_setup.py` |
+| slash command `/handoff` | `kev_memory/integrations/claude_commands/handoff.md` |
+| tests (no weights) | `tests/test_notes.py` |
+
+Checked end to end on an isolated home and port: a note was written and indexed, and `memory_search` on the
+notes domain returned the Decisions section first. The brief printed in 0.04 s.
+
+## Limits
+
+- **Automatic compaction does not write a note.** `PreCompact` cannot call the model. The user, or a CLAUDE.md
+  rule ("write a handoff before the context gets long"), has to trigger `/handoff`.
+- **A bad note loses state.** If the model leaves something out, the fresh session cannot know it. The eval below
+  measures how often that happens.
+- **`/clear` drops the prompt cache.** The first turns after it are not cached, but they are much smaller.
+
+## Evaluation plan (not run: needs your go-ahead, it costs Claude tokens)
+
+**Question.** After a handoff, does a fresh session finish the task as well as continuing the full conversation,
+and with how many fewer tokens?
+
+**Setup.**
+- **Repos:** 10 two-phase tasks on scratch copies of the e2e repos (uvicorn, cattrs, structlog), each with a test
+  that decides success. Never on client repos.
+- **Phase 1** runs once per task: Sonnet does the first half (investigation plus a partial change) with
+  `claude -p`, so every arm starts from the same state.
+- **Phase 2** is run three ways:
+
+| arm | how phase 2 starts |
+|---|---|
+| A: full history | `claude -p --resume <phase-1 session>` |
+| B: handoff | `/handoff` in the phase-1 session, then a fresh `claude -p` in the repo with the hook installed |
+| C: compact | `/compact` in the phase-1 session, then continue |
+
+**Metrics.**
+- **Primary:** phase-2 success, meaning the task's test passes.
+- **Secondary:** phase-2 input and output tokens, turns, cost, wall time, repeated dead ends (a phase-1 failure tried
+  again), and constraint violations (a user rule from phase 1 broken in phase 2).
+- **Report:** paired per task, with a bootstrap CI on the token difference.
+
+**Pass criteria (set before the run).** Arm B's success is at least arm A's minus one task out of 10, and B's
+phase-2 input tokens are at least 40% below A's.
+
+**Size and cost (estimate).**
+
+| item | calls | estimated cost |
+|---|---|---|
+| phase 1 | 10 × about $0.25 | ≈ $2.5 |
+| handoff notes | 10 × about $0.03 | ≈ $0.3 |
+| phase 2, 3 arms × 10 | 30 × about $0.20 | ≈ $6 |
+| **total, one repeat** | about 50 agent runs, about 1.5–2.5M tokens | **≈ $9 (≈ $18 with 2 repeats)** |
+
+The plan also needs a 20-minute hand check of the 10 task definitions before any run.
