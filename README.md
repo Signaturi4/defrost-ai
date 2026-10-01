@@ -10,10 +10,17 @@
 </p>
 
 <p align="center">
-  <sub><b>What it is:</b> a local hybrid RAG for Claude Code repositories, over docs and code.
-  BM25 + a dense retriever (Defrost-Ret-B) + a reranker (Defrost-Rerank) find the doc sections, and the AST code graph
-  links each one to the code it names. A git-backed working memory sits beside it: notes and decisions, with
-  pre-commit rules on its layout, refreshed by git hooks. It is served over MCP and the CLI.</sub>
+  <sub><b>What it is:</b> a local hybrid retrieval (RAG) index over a repository's documentation and source code,
+  served to Claude Code and other MCP clients. Docs (<code>.md</code> <code>.mdx</code> <code>.rst</code>
+  <code>.adoc</code>) are split into heading sections and ranked by SQLite FTS5 BM25 and Defrost-Ret-B dense vectors,
+  fused by reciprocal-rank fusion. When the two disagree on the top hit, Defrost-Rerank, a cross-encoder, reorders
+  the top 40. Both models are LoRA adapters on Qwen2.5-0.5B and run on your machine. Each section is linked to the
+  code symbols and config files it names, using graphify's tree-sitter AST graph, so every hit returns
+  <code>path:Lstart-end</code> plus the code to check it against. Git hooks re-embed only the changed sections
+  after each commit or merge to main. Next to the index, <code>defrost-memory/</code> is a separate git repo in the
+  project that holds session handoff notes and your doc/code conflict decisions: one commit per write, and a
+  pre-commit hook enforces the layout (frontmatter, <code>MEMORY.md</code> indexes, depth and size limits).
+  Interfaces: MCP (stdio), CLI, HTTP, Python.</sub>
 </p>
 
 <p align="center">
