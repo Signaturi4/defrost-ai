@@ -280,13 +280,17 @@ def remove_memory_rule(root: Path) -> None:
 
 # ---- setup ----------------------------------------------------------------------------------------------------------
 def setup(path=".", domain=None, build="now", on_main_merge=False, every_hours=None, claude_hook=False,
-          doc_rules=False, claude=False, remove=False, log=print, doc_trust=None) -> dict:
+          doc_rules=False, claude=False, remove=False, log=print, doc_trust=None, handoff=False, docs_sync=False,
+          docs_auto=False, docs_budget=0.5) -> dict:
     """doc_trust: "high" | "low" | None (keep the stored level; "low" for a new domain). See kev_memory/trust.py."""
     root = Path(path).expanduser().resolve()
     name = domain or root.name.lower().replace(" ", "-")
     out = {"domain": name, "path": str(root)}
     if remove:
         remove_git_hooks(root); remove_schedule(name); remove_claude_hook(root); remove_memory_rule(root)
+        from kev_memory import docsync, notes
+        notes.remove_hook(root)
+        docsync.remove_hooks(root)
         state_file(name).unlink(missing_ok=True)
         log(f"[{name}] triggers removed")
         return out | {"removed": True}
@@ -313,6 +317,14 @@ def setup(path=".", domain=None, build="now", on_main_merge=False, every_hours=N
         trig["every_hours"] = {"hours": every_hours, "agent": install_schedule(name, every_hours)}
     if claude_hook:
         trig["claude_hook"] = install_claude_hook(root, name)
+    if handoff:
+        from kev_memory import notes
+        notes.register_notes(name)
+        trig["handoff"] = notes.install_hook(root)
+    if docs_sync:
+        from kev_memory import docsync
+        trig["docs_sync"] = {"auto": docs_auto, "budget_usd": docs_budget if docs_auto else 0,
+                             "files": docsync.install_hooks(root, auto=docs_auto, budget_usd=docs_budget)}
     state_file(name).write_text(json.dumps({"path": str(root), "installed": time.strftime("%Y-%m-%dT%H:%M:%S"),
                                             "triggers": trig}, indent=1))
     out["triggers"] = trig

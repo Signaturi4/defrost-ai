@@ -5,7 +5,8 @@ on first use, so the models load once and are shared by all clients.
     claude mcp add defrost -- kev-memory mcp                   # Claude Code, all projects
     claude mcp add defrost -s project -- kev-memory mcp        # this project only (.mcp.json)
 
-Tools: memory_search, memory_docs_for, memory_domains, memory_init, memory_update, memory_job, memory_rollback.
+Tools: memory_search, memory_docs_for, memory_domains, memory_init, memory_update, memory_job, memory_rollback,
+memory_handoff, memory_brief (session working memory, see kev_memory/notes.py).
 graphify users get the same search tools inside graphify's own MCP server via the patch in integrations/graphify/."""
 from __future__ import annotations
 
@@ -96,6 +97,42 @@ def build_server():
     def memory_rollback(domain: str) -> str:
         """Restore the previous build of a domain."""
         return json.dumps(client.rollback(domain))
+
+    @mcp.tool()
+    def memory_handoff(goal: str, state: str = "", decisions: list[str] | None = None,
+                       next_steps: list[str] | None = None, files: list[str] | None = None,
+                       domain: str | None = None) -> str:
+        """Save a handoff note for this project so the work can continue after /clear with a small context:
+        goal (one paragraph, with acceptance criteria), state (what is done and verified), decisions (with the
+        reason), next_steps (concrete), files (paths that matter). The note is indexed as the '<domain>-notes'
+        memory; after /clear the SessionStart hook shows its brief. Call it before /clear or when the user ends a
+        session. domain: default = the memory domain of the current directory."""
+        from kev_memory import notes
+        name = domain or notes.domain_for(os.getcwd())
+        if not name:
+            return "no memory domain for this directory; run /defrost-setup first or pass domain"
+        f = notes.write_handoff(name, goal, state, decisions or [], next_steps or [], files or [])
+        try:
+            job = notes.index(name, wait=False)
+            indexed = f"indexing job {job.get('job')}"
+        except Exception as e:                                # noqa: BLE001  (note is saved even if the service is down)
+            indexed = f"not indexed yet ({e}); run memory_update('{notes.notes_domain(name)}')"
+        return f"handoff saved: {f}\n{indexed}\nThe user can now run /clear; the new session starts from this note."
+
+    @mcp.tool()
+    def memory_docs_plan(commit: str | None = None, staged: bool = False) -> str:
+        """Which doc sections describe the code changed in this repo (working tree vs HEAD by default, or the staged
+        changes, or one commit), which changed files have no doc yet, and which docs were already edited. Model-free.
+        Use it before writing docs for a change (/document-changes)."""
+        from kev_memory import docsync
+        p = docsync.plan(os.getcwd(), staged=staged, commit=commit)
+        return docsync.render(p, 30) or "docs up to date for this change"
+
+    @mcp.tool()
+    def memory_brief(domain: str | None = None) -> str:
+        """The latest handoff note of this project as a short brief (goal, state, next steps, files)."""
+        from kev_memory import notes
+        return notes.brief(domain or notes.domain_for(os.getcwd())) or "no handoff notes yet"
 
     return mcp
 

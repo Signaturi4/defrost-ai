@@ -52,6 +52,13 @@ def main(argv=None):
     st.add_argument("--claude-hook", action="store_true", help="Claude Code SessionStart hook: refresh when stale")
     st.add_argument("--doc-rules", action="store_true", help="add the doc-writing rules block to CLAUDE.md")
     st.add_argument("--claude", action="store_true", help="install slash commands + register the MCP server")
+    st.add_argument("--handoff", action="store_true",
+                    help="Claude Code: after /clear or compaction, start from the latest handoff note (project hook)")
+    st.add_argument("--docs-sync", action="store_true",
+                    help="Claude Code: document changes after editing and before git commit; post-commit doc tasks")
+    st.add_argument("--docs-auto", action="store_true",
+                    help="also run claude -p /document-changes after every commit made outside Claude (costs tokens)")
+    st.add_argument("--docs-budget", type=float, default=0.5, help="USD cap per automatic run (default 0.5)")
     st.add_argument("--remove-triggers", action="store_true")
     st.add_argument("--doc-trust", choices=["high", "low"],
                     help="high: docs are reliable, answer from them; low (default): docs are hints, always check code")
@@ -63,6 +70,25 @@ def main(argv=None):
     c.add_argument("action", choices=["install"]); c.add_argument("project", nargs="?", default=".")
     c.add_argument("--user", action="store_true", help="install for all projects (~/.claude/commands, user scope)")
     c.add_argument("--no-mcp", action="store_true", help="only copy the slash commands")
+    ho = sub.add_parser("handoff", help="write a session handoff note (what the SessionStart hook shows after /clear)")
+    ho.add_argument("--goal", required=True); ho.add_argument("--state", default="")
+    ho.add_argument("--decision", action="append", default=[]); ho.add_argument("--next", action="append", default=[])
+    ho.add_argument("--file", action="append", default=[]); ho.add_argument("--domain")
+    ho.add_argument("--no-index", action="store_true")
+    br = sub.add_parser("brief", help="print the latest handoff brief for this directory (hook command; no models)")
+    br.add_argument("--domain")
+    dp = sub.add_parser("docs-plan", help="doc sections to update for a change (model-free)")
+    dp.add_argument("--staged", action="store_true"); dp.add_argument("--commit"); dp.add_argument("--json", action="store_true")
+    dp.add_argument("--domain")
+    dh = sub.add_parser("docs-hook", help="Claude Code hook handler (reads the hook JSON on stdin)")
+    dh.add_argument("event", choices=["stop", "commit"])
+    dr = sub.add_parser("docs-record", help="git post-commit: save the commit's doc plan as a pending task")
+    dr.add_argument("commit", nargs="?", default="HEAD")
+    sub.add_parser("docs-pending", help="print pending doc tasks for this repo (SessionStart hook)")
+    dv = sub.add_parser("docs-resolve", help="mark a commit's doc task done"); dv.add_argument("commit", nargs="?")
+    da = sub.add_parser("docs-auto", help="run claude -p /document-changes <sha> (budget-capped; edits docs only)")
+    da.add_argument("commit", nargs="?", default="HEAD"); da.add_argument("--budget", type=float, default=0.5)
+    da.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
 
     if a.cmd == "build":
@@ -113,7 +139,8 @@ def main(argv=None):
     elif a.cmd == "setup":
         from kev_memory.project_setup import setup
         res = setup(a.path, a.domain, a.build, a.on_main_merge, a.every_hours, a.claude_hook, a.doc_rules, a.claude,
-                    a.remove_triggers, doc_trust=a.doc_trust)
+                    a.remove_triggers, doc_trust=a.doc_trust, handoff=a.handoff,
+                    docs_sync=a.docs_sync or a.docs_auto, docs_auto=a.docs_auto, docs_budget=a.docs_budget)
         print(json.dumps(res, indent=1, default=str))
     elif a.cmd == "refresh":
         from kev_memory.project_setup import refresh
@@ -132,6 +159,58 @@ def main(argv=None):
         from kev_memory.integrations.claude import install
         for line in install(Path(a.project), user=a.user, register_mcp=not a.no_mcp):
             print(line)
+    elif a.cmd == "handoff":
+        from kev_memory import notes
+        name = a.domain or notes.domain_for(Path.cwd())
+        if not name:
+            print("no memory domain for this directory (run kev-memory setup . first, or pass --domain)")
+            return 1
+        print(notes.write_handoff(name, a.goal, a.state, a.decision, a.next, a.file))
+        if not a.no_index:
+            print(json.dumps(notes.index(name, wait=False)))
+    elif a.cmd == "brief":
+        from kev_memory import notes
+        text = notes.brief(a.domain or notes.domain_for(Path.cwd()))
+        if text:
+            print(text)
+    elif a.cmd == "docs-plan":
+        from kev_memory import docsync
+        p = docsync.plan(Path.cwd(), staged=a.staged, commit=a.commit, domain=a.domain)
+        print(json.dumps(p, indent=1) if a.json else (docsync.render(p, 25) or "docs up to date for this change"))
+    elif a.cmd == "docs-hook":
+        from kev_memory import docsync
+        try:
+            payload = json.loads(sys.stdin.read() or "{}")
+            out = docsync.hook(a.event, payload)
+        except Exception as e:                           # noqa: BLE001  a broken hook must never block the agent
+            print(f"defrost-ai docs hook error: {e}", file=sys.stderr)
+            return 0
+        if out:
+            print(json.dumps(out))
+    elif a.cmd == "docs-record":
+        from kev_memory import docsync
+        f = docsync.record_commit(Path.cwd(), a.commit)
+        print(time.strftime("%F %T"), f"docs follow-up recorded: {f}" if f else "no doc follow-up for this commit")
+    elif a.cmd == "docs-pending":
+        from kev_memory import docsync, notes
+        text = docsync.pending_brief(notes.domain_for(Path.cwd()))
+        if text:
+            print(text)
+    elif a.cmd == "docs-resolve":
+        from kev_memory import docsync, notes
+        print(docsync.resolve(notes.domain_for(Path.cwd()), a.commit), "task(s) resolved")
+    elif a.cmd == "docs-auto":
+        import subprocess as sp
+        from kev_memory import docsync, notes
+        root = notes.git_root(Path.cwd())
+        sha = docsync.git(root, "rev-parse", "--short", a.commit).strip()
+        if not any(t["source"] == sha for t in docsync.pending(notes.domain_for(root) or "")):
+            print(time.strftime("%F %T"), f"{sha}: no pending doc task; nothing to run")
+            return 0
+        cmd = docsync.auto_command(sha, a.budget)
+        print(time.strftime("%F %T"), "running:" if not a.dry_run else "would run:", " ".join(cmd), flush=True)
+        if not a.dry_run:
+            return sp.run(cmd, cwd=root).returncode
     elif a.cmd == "verify-weights":
         from kev_memory.models.weights import models_dir, verify
         res = verify()
