@@ -52,7 +52,15 @@ def models_dir(download: bool = True) -> Path:
                                            or os.environ.get("KEV_MEMORY_NO_DOWNLOAD")):
         return CACHE / "models"
     if download and not os.environ.get("KEV_MEMORY_NO_DOWNLOAD"):
-        return download_weights()
+        try:
+            return download_weights()
+        except Exception as e:                                      # noqa: BLE001  (offline, release missing, ...)
+            if _has_weights(CACHE / "models"):
+                import sys
+                print(f"kev-memory: could not fetch weights v{WEIGHTS_VERSION} ({e}); using cached "
+                      f"v{_version(CACHE / 'models')}", file=sys.stderr)
+                return CACHE / "models"
+            raise
     raise FileNotFoundError("kev-memory weights not found. Run `kev-memory download-weights`, or set KEV_MEMORY_MODELS "
                             "to a directory with MANIFEST.json.")
 

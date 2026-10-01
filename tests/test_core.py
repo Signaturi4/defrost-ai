@@ -194,3 +194,20 @@ def test_context_starts_with_the_doc_trust_line():
            "code": [], "doc_trust": "high"}
     ctx = Memory.context({"hits": [hit]})
     assert ctx.startswith("[w] doc trust: HIGH")
+
+
+def test_conflict_decisions_are_recorded_and_shown_on_matching_hits(tmp_path, monkeypatch):
+    from kev_memory import conflicts
+    from kev_memory.memory import Memory
+    monkeypatch.setattr(conflicts, "HOME", tmp_path)
+    conflicts.record("crm", "docs/DEPLOY.md", "code", doc_says="CI runs kamal deploy", code_does="CI SSHes to the server",
+                     code_ref=".github/workflows/deploy.yml:12", doc_lines=[10, 20], note="CI only triggers the server")
+    assert conflicts.for_section(conflicts.load("crm"), "docs/DEPLOY.md", [15, 30])
+    assert not conflicts.for_section(conflicts.load("crm"), "docs/DEPLOY.md", [21, 30])
+    hit = {"rank": 1, "domain": "crm", "path": "docs/DEPLOY.md", "lines": [12, 18], "heading": "Deploy > CI",
+           "text": "CI runs kamal deploy.", "code": []}
+    ctx = Memory.context({"hits": [hit]})
+    assert "resolved: code is right: update the doc (user," in ctx
+    import pytest
+    with pytest.raises(ValueError):
+        conflicts.record("crm", "docs/DEPLOY.md", "agent-guess")

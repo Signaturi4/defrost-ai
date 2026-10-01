@@ -228,7 +228,10 @@ Modes: `fast` (default), `rerank` (most accurate, slowest), `dense`, `bm25` (exa
 - **What gets linked:** config, CI and infra files (compose files, Dockerfiles, workflows, crontabs, shell scripts),
   as well as code symbols. Secret-like files (`.env`, `*secret*`, keys) are never indexed.
 - **Stale docs:** a hit is flagged when a file it names was committed after the doc was.
-- **Conflicts:** a hit is flagged when the doc names a file or function that no longer exists.
+- **Conflicts:** a hit is flagged when the doc names a file or function that no longer exists. The agent does not
+  pick a side: it shows the doc and the code and asks you ("code is right", "doc is right", "not a conflict", "not
+  sure"). Your answer is recorded (`memory_resolve_conflict`, `kev-memory conflicts <domain>`) and shown on later
+  hits as a `resolved:` line, so each conflict is asked once.
 - **Claude's instructions:** the CLAUDE.md block tells Claude to read the `verify in:` files before stating how
   something behaves, to trust the code when the two disagree, and to list the doc/code conflicts it found.
 - **Docs to update:** after a change, `memory_docs_for` (MCP) or `kev-memory docs-for <file>` lists the doc sections

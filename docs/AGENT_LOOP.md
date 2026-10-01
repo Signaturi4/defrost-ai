@@ -83,7 +83,7 @@ flowchart TD
     FLAG -- no --> ANS
     V --> CMP{"Docs and code agree?"}
     CMP -- yes --> ANS
-    CMP -- no --> CONF["Code wins; note it<br/>under Doc/code conflicts"] --> ANS
+    CMP -- no --> CONF["Ask the user: code right,<br/>doc right, no conflict, or open?<br/>record with memory_resolve_conflict"] --> ANS
     G --> GO["Observation: nodes + edges"] --> V
     GR --> V
 
@@ -104,7 +104,7 @@ flowchart TD
 | choose a tool | Use memory for questions about behaviour, process and decisions; the graph for structure; grep for exact strings | The memory finds the answering doc 94% of the time; graph queries find it 6% of the time ([E2E_GRAPHIFY.md](E2E_GRAPHIFY.md)) |
 | `k="auto"` | One confident section is enough, and five means the retriever is unsure | Fewer tokens for the next thought; low confidence prompts a refined query |
 | verify | Read the `verify in:` files: always when trust is `low`, and on a `!` flag when trust is `high` | Docs go stale; in the agent test, memory alone repeated a stale CI claim |
-| conflicts | Code wins, and the answer lists each doc/code conflict | Silent stale answers are the costliest failure |
+| conflicts | The user decides (human in the loop): the agent shows both sides, asks, records the decision with `memory_resolve_conflict`, then updates the doc, reports a bug, or marks an open question | Neither side is always right: a doc can describe intended behaviour the code broke. Decisions are remembered, so each conflict is asked once |
 | core first | Linked code from the project core (backend, API, db) is shown first | Fewer jumps into UI or test code |
 | after edits | `memory_docs_for` the changed files, then update those sections in the same change | Keeps the memory true for the next loop |
 | refresh | Git hooks refresh incrementally on main; the agent never rebuilds by hand | The next search already sees the change |

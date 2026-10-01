@@ -17,20 +17,20 @@ DEFAULT = "low"
 
 HEADER = {
     "high": "doc trust: HIGH (well-documented project). Answer from these sections; read code only for hits with a "
-            "`!` line, and then the code wins.",
+            "`!` line; if the code disagrees, ask the user which is right (see conflicts.QUESTION).",
     "low": "doc trust: LOW (code changes fast, docs lag). Treat these sections as hints: read the `verify in:` files "
-           "and answer from the code; cite a doc only where the code agrees, and list disagreements.",
+           "and answer from the code; cite a doc only where the code agrees. Doc/code disagreements: ask the user.",
 }
 
 RULE = {
     "high": "- **Ground (doc trust: high):** this project's docs are maintained, so answer from the returned sections. "
             "Read code only when a hit has a line starting with `!` (file changed after the doc, or the doc names "
-            "code that no longer exists); then the code wins, and say which doc section is wrong under a "
-            "**Doc/code conflicts** heading.",
+            "code that no longer exists). If the code disagrees with the doc, the user decides which is right: "
+            "see the conflict rule below.",
     "low": "- **Ground (doc trust: low):** this project's code moves faster than its docs, so the sections are hints. "
            "Before stating how something behaves, read the files on the hit's `verify in:` line (and always those "
-           "behind a `!` line) and answer from the code. When code and doc disagree, the code wins: list the doc "
-           "sections that are wrong under a **Doc/code conflicts** heading.",
+           "behind a `!` line) and answer from what the code does. When code and doc disagree, the user decides which "
+           "is right: see the conflict rule below.",
 }
 
 

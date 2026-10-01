@@ -19,7 +19,7 @@ from pathlib import Path
 
 import numpy as np
 
-from kev_memory import store
+from kev_memory import conflicts, store
 from kev_memory.retrieval import keyword, policy
 
 PATH_OR_CALL = re.compile(r"(?:[\w.-]+/)*[\w.-]+\.(?:py|ts|tsx|js|jsx|mjs|go|rs|rb|java|kt|swift|sh|ya?ml|toml|sql|tf)"
@@ -196,6 +196,7 @@ class Memory:
             names = ", ".join(dict.fromkeys(domains))
             parts.append(f"[{names}] {trust.HEADER[level]}\n")
             used += len(parts[-1]) // 4
+        ledgers: dict[str, list] = {}
         for h in result["hits"]:
             body = " ".join(h["text"].split()[:words_per_hit])
             code = "".join(f"\n  -> code {c['label']} ({c['file']}{':' + c['location'] if c['location'] else ''})"
@@ -204,6 +205,10 @@ class Memory:
                             for x in h.get("stale", []))
             if h.get("missing"):
                 code += "\n  ! doc/code conflict: names not found in the code: " + ", ".join(f"`{m}`" for m in h["missing"])
+            for r in conflicts.for_section(ledgers.setdefault(h["domain"], conflicts.load(h["domain"])),
+                                           h["path"], h["lines"])[:1]:
+                code += (f"\n  resolved: {r['meaning']} (user, {r['at'][:10]})"
+                         + (f": {r['note']}" if r["note"] else ""))
             if h.get("verify"):
                 code += "\n  verify in: " + ", ".join(h["verify"])
             block = f"[{h['rank']}] {h['domain']}:{h['path']}:L{h['lines'][0]}-{h['lines'][1]}  {h['heading']}\n{body}{code}\n"

@@ -258,9 +258,14 @@ def install_memory_rule(root: Path, name: str, doc_trust: str | None = None) -> 
 - **Answer:** for "how do I / why does / what happens when" questions, call `memory_search` (MCP server `defrost`,
   domain `{name}`) first, and cite `path:Lstart-end`. Use grep for exact code.
 {trust.RULE[level]}
+- **Doc/code conflicts are the user's call (human in the loop):** show both sides (doc `path:L..` and what it
+  says; code `path:line` and what it does) and ask with AskUserQuestion: "Code is right: update the doc", "Doc is
+  right: the code is a bug", "Not a conflict", "Not sure: mark as open question". Record the answer with
+  `memory_resolve_conflict`, then act on it (never change code for a "doc is right" answer unless asked). Until
+  answered, state both versions. Hits with a `resolved:` line are already decided: do not ask again.
 - **Keep docs current, on every change:** (1) before finishing, call `memory_docs_for` with the files you changed;
   (2) update those sections in the same change (rules: `docs/DOC_RULES.md` if present); (3) a new feature, command,
-  env var or config key gets a section; (4) fix any doc/code conflict you found, or list it in your final message.
+  env var or config key gets a section; (4) bring every doc/code conflict you found to the user as above.
   The memory refreshes itself after commits to main; otherwise run `/memory-update`.
 {RULE_END}"""
     text = re.sub(rf"\n*{re.escape(RULE_START)}.*?{re.escape(RULE_END)}\n*", "\n", text, flags=re.S).rstrip()

@@ -64,6 +64,9 @@ def main(argv=None):
                     help="high: docs are reliable, answer from them; low (default): docs are hints, always check code")
     rf = sub.add_parser("refresh"); rf.add_argument("domain"); rf.add_argument("--if-changed", action="store_true")
     ss = sub.add_parser("status"); ss.add_argument("domain", nargs="?")
+    cf = sub.add_parser("conflicts", help="doc/code conflicts decided by the user (list, or record one)")
+    cf.add_argument("domain"); cf.add_argument("--doc", help="doc path as cited by search, to record a decision")
+    cf.add_argument("--decision", choices=["code", "doc", "both", "open"]); cf.add_argument("--note", default="")
     sub.add_parser("download-weights")
     sub.add_parser("mcp", help="MCP server over stdio (claude mcp add defrost -- kev-memory mcp)")
     c = sub.add_parser("claude", help="Claude Code setup: slash commands + MCP registration")
@@ -110,6 +113,13 @@ def main(argv=None):
     elif a.cmd == "domains":
         from kev_memory.library import Library
         print(json.dumps(Library().domains(), indent=1))
+    elif a.cmd == "conflicts":
+        from kev_memory import conflicts
+        if a.doc and a.decision:
+            print(json.dumps(conflicts.record(a.domain, a.doc, a.decision, note=a.note), indent=1))
+        else:
+            for r in conflicts.load(a.domain):
+                print(f"{r['at']}  {r['doc_path']}:{r['doc_lines']}  {r['meaning']}  {r['note']}")
     elif a.cmd == "docs-for":
         from kev_memory.library import Library
         hits = Library().docs_for(a.paths, a.domain)

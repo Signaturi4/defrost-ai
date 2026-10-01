@@ -6,7 +6,8 @@ on first use, so the models load once and are shared by all clients.
     claude mcp add defrost -s project -- kev-memory mcp        # this project only (.mcp.json)
 
 Tools: memory_search, memory_docs_for, memory_domains, memory_init, memory_update, memory_job, memory_rollback,
-memory_handoff, memory_brief (session working memory, see kev_memory/notes.py).
+memory_handoff, memory_brief (session working memory, see kev_memory/notes.py), memory_resolve_conflict,
+memory_conflicts (doc/code conflicts are decided by the user, see kev_memory/conflicts.py).
 graphify users get the same search tools inside graphify's own MCP server via the patch in integrations/graphify/."""
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ import json
 import os
 from pathlib import Path
 
+from kev_memory import conflicts
 from kev_memory.service import client
 
 HOME = Path(os.environ.get("KEV_MEMORY_HOME", "~/.kev-memory")).expanduser()
@@ -32,9 +34,8 @@ def build_server():
         "config files it names. Use memory_search first for 'how do I / why does / what happens when' questions, and "
         "cite the returned path:Lstart-end. Docs can be out of date: before stating how something behaves, read the "
         "files on each hit's 'verify in:' line (config files first) and always the ones marked 'doc may be stale'. "
-        "When code and doc disagree, the code wins; say which doc section is stale. Each result starts with a "
-        "'doc trust' line set by the project owner (HIGH: answer from the docs; LOW: docs are hints, answer from "
-        "the code): follow it."))
+        "Each result starts with a 'doc trust' line set by the project owner (HIGH: answer from the docs; LOW: docs "
+        "are hints, answer from the code): follow it. " + conflicts.QUESTION))
 
     @mcp.tool()
     def memory_search(query: str, domains: list[str] | None = None, mode: str = "fast", k: str = "auto") -> str:
@@ -59,6 +60,24 @@ def build_server():
             return "no doc section links to these files"
         return "\n".join(f"{h['file']}: {h['domain']}:{h['path']}:L{h['lines'][0]}-{h['lines'][1]}  {h['heading']}"
                          for h in hits)
+
+    @mcp.tool()
+    def memory_resolve_conflict(domain: str, doc_path: str, decision: str, doc_says: str = "", code_does: str = "",
+                                code_ref: str = "", doc_lines: list[int] | None = None, note: str = "") -> str:
+        """Record the USER's decision on a doc/code conflict, after asking them (never decide it yourself).
+        decision: "code" (code is right, update the doc) | "doc" (doc is right, the code is a bug) | "both" (not a
+        conflict) | "open" (unsure: mark as open question). doc_path/doc_lines as cited in memory_search
+        (domain:path:Lstart-end -> doc_path=path); code_ref = file:line. Later search hits show the decision."""
+        try:
+            return json.dumps(conflicts.record(domain, doc_path, decision, doc_says, code_does, code_ref, doc_lines,
+                                               note), indent=1)
+        except ValueError as e:
+            return str(e)
+
+    @mcp.tool()
+    def memory_conflicts(domain: str) -> str:
+        """Doc/code conflicts the user has decided for this domain (latest last)."""
+        return json.dumps(conflicts.load(domain), indent=1)
 
     @mcp.tool()
     def memory_domains() -> str:
