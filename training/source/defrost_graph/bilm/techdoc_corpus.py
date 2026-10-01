@@ -4,20 +4,29 @@ tech_doc_graph_training_plan.md). One "mega repository" of every technical docum
     uv run python -m defrost_graph.bilm.techdoc_corpus all          # gather -> hf -> synth -> clean -> corpus
     uv run python -m defrost_graph.bilm.techdoc_corpus gather       # or one stage at a time
 
-Layout under defrost_graph/data/techdoc_mega/ (git-ignored; everything below is regenerable from this file):
+Layout under defrost_graph/data/techdoc_mega/ (git-ignored; everything below is regenerable from this file;
+TECHDOC_MEGA overrides the location, TECHDOC_OSS_DIR the OSS clones):
 
-  raw/local/<root>/<relpath>   every .md, plus .rst/.mdx/.txt inside a docs/ folder, from the local projects
-  raw/oss/<repo>/<relpath>     the same for the OSS repos cloned for P1 (defrost_graph copy/data/techdoc/repos)
+  raw/oss/<repo>/<relpath>     every .md, plus .rst/.mdx/.txt inside a docs/ folder, from the allowlisted OSS clones
+  raw/book/<book>/<relpath>    the same for the allowlisted open-licensed books (train role; TECHDOC_PROSE_DIR)
   raw/hf/<dataset>/            stackoverflow-ner, NER-RE-for-Software-Mentions, SciERC (full release), CrossRE ai
   raw/hfdocs/<name>/<id>.md    open document sets used as whole docs: PEPs, python Stack Overflow threads
   raw/hf/csn_docstrings.txt    CodeSearchNet python docstrings (train partition), one per line
   raw/synth/<repo>.md          code-derived docs (below)
-  raw/manifest.jsonl           one row per raw file: source, project, path, sha256, bytes
+  raw/manifest.jsonl           one row per raw file: source, source_id, project, path, sha256, bytes
   clean/docs.jsonl             cleaned, deduplicated, secret-scrubbed documents with a train / heldout split
-  corpus/corpus_mntp.txt       MNTP input  (run_kmp.py, train_file)
+  corpus/corpus_mntp.txt       MNTP input  (run_kmp.py, train_file)       + corpus_mntp.txt.provenance.json
   corpus/corpus_cgsa.txt       CGSA input  (run_cgsa.py, Wiki1M format: one sentence per line)
+                                                                          + corpus_cgsa.txt.provenance.json
   corpus/corpus_heldout.txt    held-out text for the "MNTP accuracy up on doc text" gate
   manifest.json                sha256 of every corpus file + counts
+
+Provenance (data_provenance.py, training/configs/sources_allowlist.json): only allowlisted sources enter -- OSS
+clones at their pinned commit, Hugging Face datasets at their pinned revision, SciERC by archive sha256. There are no
+local-folder roots: an earlier version walked home folders and pulled private client documents into the corpus.
+Every document is also checked against the private markers (path patterns and terms; a match fails the build), and
+both corpus files pass the 13-gram gate: a unit that overlaps the private reference corpora fails the build, a unit
+that overlaps an evaluation suite is dropped.
 
 Why each choice, and where it is grounded:
 
@@ -28,10 +37,10 @@ Why each choice, and where it is grounded:
   * Mixture balance. One project (a third-party skills repo) has ~1.2k markdown files; left alone it would be a
     fifth of the corpus. Every project is capped at MAX_PROJECT_SHARE of the corpus characters -- the same
     concern as any-domain's p(source) ~ n^0.5 sampling (data_requirements.md D5).
-  * Held-out repos never enter pretraining. defrost (this repo) and jinja / marshmallow / werkzeug are P1's dev and test
-    repos. MNTP on their text would be training on the eval distribution, so their docs are written to
+  * Held-out repos never enter pretraining. jinja / marshmallow / werkzeug (role "heldout" in the allowlist) are P1's
+    dev and test repos. MNTP on their text would be training on the eval distribution, so their docs are written to
     corpus_heldout.txt only, and used to measure the P2 gate.
-  * Secrets. Local notes and READMEs carry API keys; the corpus is uploaded to a Modal volume, so every document is
+  * Secrets. READMEs can carry API keys; the corpus is uploaded to a Modal volume, so every document is
     scrubbed (key patterns, bearer tokens, JWTs, private-key blocks, long high-entropy strings, e-mail addresses)
     before anything leaves the machine. raw/ never leaves the machine.
   * Open document sets (all openly licensed; each is one project, so MAX_PROJECT_SHARE caps it):
@@ -56,27 +65,21 @@ import os
 import random
 import re
 import shutil
-import subprocess
 import tarfile
 import urllib.request
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[2]
-MEGA = REPO / "defrost_graph/data/techdoc_mega"
-HOME = Path.home()
+from defrost_graph.bilm import data_provenance as dp
 
-LOCAL_ROOTS = []                       # private local project folders (redacted in the public copy)
-OSS_DIR = REPO / "defrost_graph copy/data/techdoc/repos"
-OSS_TRAIN = ["attrs", "black", "click", "django", "fastapi", "flask", "httpx", "pydantic", "pytest", "requests",
-             "rich", "sqlalchemy", "sqlmodel", "starlette", "typer"]
-OSS_HELDOUT = ["jinja", "marshmallow", "werkzeug"]
-HELDOUT_LOCAL = [str(REPO)]                          # defrost: P1's own-repo test set
+REPO = Path(__file__).resolve().parents[2]
+MEGA = Path(os.environ.get("TECHDOC_MEGA") or REPO / "defrost_graph/data/techdoc_mega")
+OSS_DIR = Path(os.environ.get("TECHDOC_OSS_DIR") or REPO / "defrost_graph copy/data/techdoc/repos")
+PROSE_DIR = Path(os.environ.get("TECHDOC_PROSE_DIR") or REPO / "defrost_graph/data/prose/repos")
 
 SKIP_PARTS = {"node_modules", "site-packages", ".cache", "Library", "dist", "build", ".next", ".git",
               "__pycache__", ".history", ".Trash", ".pytest_cache", ".mypy_cache", "venv", "env", ".tox",
               "agent_envoirment_ml", "defrost_graph copy", "techdoc_mega"}
 SKIP_NAMES = re.compile(r"^(license|licence|copying|code_of_conduct|contributors|authors|notice)(\.|$)", re.I)
-PERSONAL = re.compile(r"/Documents/Main/(Personal[^/]*|Business)/")     # life notes, not technical documents
 DOC_EXT = {".md", ".markdown", ".mdx", ".rst", ".txt"}
 
 MAX_PROJECT_SHARE = 0.12
@@ -84,15 +87,29 @@ MAX_SYNTH_SHARE = 0.20
 MIN_CHARS = 300
 CODE_BLOCK_MAX_LINES = 40
 
-HF_DATASETS = {"stackoverflow-ner": "mrm8488/stackoverflow-ner",
-               "NER-RE-for-Software-Mentions": "psresearch/NER-RE-for-Software-Mentions"}
-PEP_REPO = "common-pile/python_enhancement_proposals_filtered"
-SO_REPO, SO_DIR, SO_SHARDS = "HuggingFaceTB/stackexchange_2025_md", "stackoverflow.com", 177
+# Hugging Face ids and pinned revisions come from the allowlist (aliases: these raw-folder names)
+HF_DATASETS = ["stackoverflow-ner", "NER-RE-for-Software-Mentions"]
+SO_DIR, SO_SHARDS = "stackoverflow.com", 177
 SO_ROW_GROUPS, SO_MIN_SCORE, SO_MAX_THREADS = 120, 2, 4000   # ~1000 rows per row group, ~7% tagged python
-CSN_REPO, CSN_FILE = "Nan-Do/code-search-net-python", "data/train-00000-of-00004-ee77a7de79eb2ab2.parquet"
+CSN_FILE = "data/train-00000-of-00004-ee77a7de79eb2ab2.parquet"
 CSN_MAX = 40000
 HELDOUT_LIBS = re.compile(r"jinja|werkzeug|marshmallow", re.I)
 SCIERC_URL = "http://nlp.cs.washington.edu/sciIE/data/sciERC_processed.tar.gz"
+GATHER = (("oss", "train"), ("oss", "heldout"), ("book", "train"))     # allowlist (kind, role) pairs gathered
+_ALLOW = None
+
+
+def allowlist():
+    """The source allowlist + private markers (strict: the private markers file must exist)."""
+    global _ALLOW
+    if _ALLOW is None:
+        _ALLOW = dp.Allowlist.load(bases={"oss": OSS_DIR, "prose": PROSE_DIR, "mega": MEGA})
+    return _ALLOW
+
+
+def oss_repos(role, kind="oss"):
+    a = allowlist()
+    return [(sid, sid.split(":", 1)[1], a.local_dir(sid)) for sid in a.ids(kind=kind, role=role)]
 
 
 # ── gather ───────────────────────────────────────────────────────────────────
@@ -101,7 +118,7 @@ def _skip(path):
     parts = set(Path(path).parts)
     if parts & SKIP_PARTS or any(p.startswith(".venv") for p in parts):
         return True
-    return bool(PERSONAL.search(str(path))) or bool(SKIP_NAMES.match(Path(path).name))
+    return bool(SKIP_NAMES.match(Path(path).name))
 
 
 def _is_doc(path):
@@ -111,38 +128,7 @@ def _is_doc(path):
     return p.suffix.lower() in DOC_EXT and any(part.lower() in ("docs", "doc", "documentation") for part in p.parts)
 
 
-def _candidates(root):
-    """Spotlight when available (a filesystem walk of ~/Downloads and ~/Desktop takes minutes), else os.walk."""
-    root = Path(root)
-    try:
-        query = " || ".join(f'kMDItemFSName == "*{ext}"c' for ext in sorted(DOC_EXT))
-        out = subprocess.run(["mdfind", "-onlyin", str(root), query],
-                             capture_output=True, text=True, timeout=300)
-        if out.returncode == 0 and out.stdout.strip():
-            return [Path(x) for x in out.stdout.splitlines() if x]
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
-    found = []
-    for dp, dns, fns in os.walk(root):
-        dns[:] = [d for d in dns if d not in SKIP_PARTS and not d.startswith(".venv") and not d.startswith(".")]
-        found += [Path(dp) / f for f in fns]
-    return found
-
-
-SF_DATALESS = 0x40000000      # macOS: an iCloud placeholder; reading it blocks on a cloud download
-
-
-def _is_dataless(path):
-    try:
-        return bool(os.stat(path).st_flags & SF_DATALESS)
-    except (OSError, AttributeError):
-        return False
-
-
-def _copy(src, dst, source, project, manifest):
-    if _is_dataless(src):
-        manifest.append({"source": source, "project": project, "origin": str(src), "skipped": "dataless"})
-        return
+def _copy(src, dst, source, source_id, project, manifest):
     try:
         data = src.read_bytes()
     except OSError:
@@ -151,71 +137,75 @@ def _copy(src, dst, source, project, manifest):
         return
     dst.parent.mkdir(parents=True, exist_ok=True)
     dst.write_bytes(data)
-    manifest.append({"source": source, "project": project, "path": str(dst.relative_to(MEGA)),
+    manifest.append({"source": source, "source_id": source_id, "project": project, "path": str(dst.relative_to(MEGA)),
                      "origin": str(src), "sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)})
 
 
-def _project_of(path):
-    """~/<root>/<project>/... -> '<root>/<project>'; defrost keeps its own name."""
-    rel = Path(path).relative_to(HOME).parts
-    return "/".join(rel[:2]) if len(rel) > 2 else rel[0]
-
-
 def gather():
+    """Docs of the allowlisted clones only: OSS repos (train + held-out) and the train-role books. Each clone must sit
+    at its pinned commit; each file must resolve to its allowlisted source and pass the private-path guard, or the
+    build stops."""
+    a = allowlist()
+    wanted = {sid for kind, role in GATHER for sid in a.ids(kind=kind, role=role)}
+    stale = [p for p in dp.check_sources(a) if p.split(": ", 1)[0] in wanted]
+    if stale:
+        raise dp.SourceRejected("clones do not match the allowlist:\n  " + "\n  ".join(stale))
     manifest = []
     raw = MEGA / "raw"
-    for sub in ("local", "oss"):
-        shutil.rmtree(raw / sub, ignore_errors=True)
-    n_local = 0
-    for root in LOCAL_ROOTS:
-        base = HOME / root
-        if not base.exists():
-            continue
-        for p in _candidates(base):
-            if not p.is_file() or _skip(p) or not _is_doc(p):
-                continue
-            rel = p.relative_to(HOME)
-            _copy(p, raw / "local" / rel, "local", _project_of(p), manifest)
-            n_local += 1
-    for repo in OSS_TRAIN + OSS_HELDOUT:
-        base = OSS_DIR / repo
-        if not base.exists():
-            print(f"  missing OSS repo {repo} (expected at {base})")
-            continue
-        for dp, dns, fns in os.walk(base):
-            dns[:] = [d for d in dns if d not in SKIP_PARTS and not d.startswith(".")]
-            for f in fns:
-                p = Path(dp) / f
-                if _is_doc(p) and not _skip(p.relative_to(base)):
-                    _copy(p, raw / "oss" / repo / p.relative_to(base), "oss", f"oss/{repo}", manifest)
+    shutil.rmtree(raw / "oss", ignore_errors=True)
+    shutil.rmtree(raw / "book", ignore_errors=True)
+    for kind, role in GATHER:
+        for sid, repo, base in oss_repos(role, kind):
+            for dp_, dns, fns in os.walk(base):
+                dns[:] = [d for d in dns if d not in SKIP_PARTS and not d.startswith(".")]
+                for f in fns:
+                    p = Path(dp_) / f
+                    if _is_doc(p) and not _skip(p.relative_to(base)):
+                        if a.source_for_path(p, roles=("train", "heldout"))["id"] != sid:
+                            raise dp.SourceRejected(f"{p} resolves to another source than {sid}")
+                        _copy(p, raw / kind / repo / p.relative_to(base), kind, sid, f"{kind}/{repo}", manifest)
+    (raw).mkdir(parents=True, exist_ok=True)
     with open(raw / "manifest.jsonl", "w") as fh:
         for row in manifest:
             fh.write(json.dumps(row) + "\n")
-    by_src = collections.Counter(r["source"] for r in manifest)
-    print(f"gather: {len(manifest)} files ({dict(by_src)}), "
-          f"{sum(r.get('bytes', 0) for r in manifest) / 1e6:.1f} MB, {len({r['project'] for r in manifest})} projects")
+    by_src = collections.Counter(r["source_id"] for r in manifest)
+    print(f"gather: {len(manifest)} files from {len(by_src)} allowlisted clones, "
+          f"{sum(r.get('bytes', 0) for r in manifest) / 1e6:.1f} MB")
 
 
 # ── HF / public datasets ─────────────────────────────────────────────────────
+
+def _rev(alias):
+    """Pinned revision of an allowlisted dataset (by raw-folder alias); unlisted -> SourceRejected."""
+    s = allowlist().source(alias)
+    if s["kind"] != "hf":
+        raise dp.SourceRejected(f"{alias}: not a Hugging Face source")
+    return s["hf_id"], s["revision"]
+
 
 def hf():
     from huggingface_hub import snapshot_download
     out = MEGA / "raw/hf"
     out.mkdir(parents=True, exist_ok=True)
-    for name, repo_id in HF_DATASETS.items():
-        path = snapshot_download(repo_id=repo_id, repo_type="dataset", local_dir=out / name)
-        print(f"hf: {repo_id} -> {path}")
+    for name in HF_DATASETS:
+        repo_id, rev = _rev(name)
+        path = snapshot_download(repo_id=repo_id, repo_type="dataset", revision=rev, local_dir=out / name)
+        print(f"hf: {repo_id}@{rev[:8]} -> {path}")
     scierc = out / "SciERC"
+    tgz = scierc / "sciERC_processed.tar.gz"
     if not (scierc / "processed_data").exists():
         scierc.mkdir(exist_ok=True)
-        tgz = scierc / "sciERC_processed.tar.gz"
         try:
             urllib.request.urlretrieve(SCIERC_URL, tgz)
+        except Exception as e:          # the UW mirror is the only source of the full release; report, don't fake it
+            print(f"hf: SciERC download FAILED ({e}); get it from {SCIERC_URL}")
+    if tgz.exists():
+        if dp.sha256(tgz) != allowlist().source("SciERC")["sha256"]:
+            raise dp.SourceRejected(f"{tgz}: sha256 differs from the allowlist")
+        if not (scierc / "processed_data").exists():
             with tarfile.open(tgz) as t:
                 t.extractall(scierc)
             print(f"hf: SciERC full release -> {scierc}")
-        except Exception as e:          # the UW mirror is the only source of the full release; report, don't fake it
-            print(f"hf: SciERC download FAILED ({e}); get it from {SCIERC_URL}")
     crossre = out / "crossre_ai"
     crossre.mkdir(exist_ok=True)
     for split in ("heldout_dev", "heldout_test"):
@@ -243,10 +233,13 @@ def hf_docs(seed=0):
     rng = random.Random(seed)
     # PEPs: one dolma json.gz, ~10 MB
     peps = []
-    for line in gzip.open(hf_hub_download(PEP_REPO, "peps-dolma-0000.json.gz", repo_type="dataset"), "rt"):
+    pep_repo, pep_rev = _rev("peps")
+    for line in gzip.open(hf_hub_download(pep_repo, "peps-dolma-0000.json.gz", repo_type="dataset", revision=pep_rev),
+                          "rt"):
         peps.append(json.loads(line)["text"])
     _write_docs("peps", peps)
     # Stack Overflow: read random row groups (column projection, range requests) instead of 90 GB of shards
+    so_repo, so_rev = _rev("stackoverflow_python")
     fs, threads = HfFileSystem(), []
     picks = sorted({(rng.randrange(SO_SHARDS), rng.random()) for _ in range(SO_ROW_GROUPS)})
     files = {}
@@ -255,14 +248,15 @@ def hf_docs(seed=0):
             break
         if shard not in files:
             files[shard] = pq.ParquetFile(fs.open(
-                f"datasets/{SO_REPO}/{SO_DIR}/train-{shard:05d}-of-{SO_SHARDS:05d}.parquet"))
+                f"datasets/{so_repo}@{so_rev}/{SO_DIR}/train-{shard:05d}-of-{SO_SHARDS:05d}.parquet"))
         pf = files[shard]
         df = pf.read_row_group(int(u * pf.num_row_groups), columns=["Tags", "Score", "ThreadText"]).to_pandas()
         df = df[df.Tags.str.contains("<python") & (df.Score >= SO_MIN_SCORE) & ~df.Tags.str.contains(HELDOUT_LIBS)]
         threads += df.ThreadText.tolist()
     _write_docs("stackoverflow_python", threads[:SO_MAX_THREADS])
     # CodeSearchNet docstrings: first paragraph of each train-partition docstring
-    df = pd.read_parquet(hf_hub_download(CSN_REPO, CSN_FILE, repo_type="dataset"),
+    csn_repo, csn_rev = _rev("csn_docstrings")
+    df = pd.read_parquet(hf_hub_download(csn_repo, CSN_FILE, repo_type="dataset", revision=csn_rev),
                          columns=["repo", "docstring", "partition"])
     df = df[(df.partition == "train") & ~df.repo.str.contains(HELDOUT_LIBS)]
     out, seen = [], set()
@@ -277,11 +271,12 @@ def hf_docs(seed=0):
 
 
 def hf_train_sentences():
-    """Plain sentences from the TRAIN splits of the public sets, for the pretraining corpus. Their dev/test splits
-    stay out: P1 evaluates on them."""
+    """(source id, sentence) from the TRAIN splits of the public sets, for the pretraining corpus. Their dev/test
+    splits stay out: P1 evaluates on them."""
     base = MEGA / "raw/hf"
-    sents = []
+    out = []
     for name in HF_DATASETS:
+        sents = []
         for p in sorted((base / name).rglob("*")):
             if "test" in p.name.lower() or "dev" in p.name.lower() or "valid" in p.name.lower():
                 continue
@@ -305,15 +300,18 @@ def hf_train_sentences():
                         x = r.get("tokens") or r.get("words") or r.get("text") or r.get("sentence")
                         if x:
                             sents.append(" ".join(x) if isinstance(x, list) else x)
+        out += [(allowlist().source(name)["id"], s) for s in sents]
     csn = base / "csn_docstrings.txt"
     if csn.exists():
-        sents += [l.strip() for l in open(csn) if l.strip()]
+        sid = allowlist().source("csn_docstrings")["id"]
+        out += [(sid, l.strip()) for l in open(csn) if l.strip()]
     scierc = base / "SciERC/processed_data/json/train.json"
     if scierc.exists():
+        sid = allowlist().source("SciERC")["id"]
         for line in open(scierc):
             r = json.loads(line)
-            sents += [" ".join(s) for s in r["sentences"]]
-    return [s for s in sents if len(s.split()) >= 5]
+            out += [(sid, " ".join(s)) for s in r["sentences"]]
+    return [(sid, s) for sid, s in out if len(s.split()) >= 5]
 
 
 # ── synthetic, code-derived docs ─────────────────────────────────────────────
@@ -423,8 +421,7 @@ def synth(seed=0):
     out = MEGA / "raw/synth"
     shutil.rmtree(out, ignore_errors=True)
     out.mkdir(parents=True)
-    for repo in OSS_TRAIN:
-        root = OSS_DIR / repo
+    for _, repo, root in oss_repos("train"):
         if not root.exists():
             continue
         g = build(root, exclude=("tests", "test", "docs", "examples", "benchmarks"))
@@ -501,20 +498,33 @@ def _paragraphs(text):
 
 
 def clean():
+    """Every row must name an allowlisted source (raw manifests from before the allowlist have none: re-run gather),
+    its path must pass the private-path guard and its text the private-term guard, or the build stops."""
+    a = allowlist()
     rows = [r for r in map(json.loads, open(MEGA / "raw/manifest.jsonl")) if "skipped" not in r]
     for p in sorted((MEGA / "raw/synth").glob("*.md")):
         rows.append({"source": "synth", "project": f"synth/{p.stem}", "path": str(p.relative_to(MEGA))})
     for p in sorted((MEGA / "raw/hfdocs").glob("*/*.md")):
         rows.append({"source": "hf", "project": f"hf/{p.parent.name}", "path": str(p.relative_to(MEGA))})
-    heldout_projects = {f"oss/{r}" for r in OSS_HELDOUT} | {"research/defrost"}
+    for r in rows:
+        if r["source"] not in ("oss", "book", "synth", "hf"):
+            raise dp.SourceRejected(f"raw row from source {r['source']!r} ({r['path']}): only allowlisted sources")
+        r["source_id"] = a.source(r.get("source_id") or r["project"], roles=("train", "heldout"))["id"]
+        if r["source"] == "synth" and a.sources[r["source_id"]]["role"] != "train":
+            raise dp.SourceRejected(f"synthetic docs of a held-out repo: {r['path']}")
+        a.check_path(r["path"])
+        if r.get("origin"):
+            a.check_path(r["origin"])
+    heldout_ids = set(a.ids(role="heldout"))
     seen_para, docs, dropped = set(), [], collections.Counter()
     # heldout first, so a paragraph shared with a train doc is removed from TRAIN, never from the eval text
-    rows.sort(key=lambda r: (r["project"] not in heldout_projects, r["source"] == "synth", r["path"]))
+    rows.sort(key=lambda r: (r["source_id"] not in heldout_ids, r["source"] == "synth", r["path"]))
     for r in rows:
         raw = (MEGA / r["path"]).read_bytes().decode("utf-8", errors="replace")
         if raw.count("�") > 0.01 * max(len(raw), 1):
             dropped["binary"] += 1
             continue
+        a.check_text(raw, r["path"])
         text = clean_text(raw)
         if _latin_share(text) < 0.7:
             dropped["non_latin"] += 1
@@ -531,9 +541,9 @@ def clean():
         if len(text) < MIN_CHARS:
             dropped["short_or_duplicate"] += 1
             continue
-        split = "heldout" if r["project"] in heldout_projects else "train"
+        split = "heldout" if r["source_id"] in heldout_ids else "train"
         docs.append({"id": hashlib.sha1(r["path"].encode()).hexdigest()[:12], "source": r["source"],
-                     "project": r["project"], "path": r["path"], "split": split, "text": text,
+                     "source_id": r["source_id"], "project": r["project"], "path": r["path"], "split": split, "text": text,
                      "n_chars": len(text)})
     (MEGA / "clean").mkdir(exist_ok=True)
     with open(MEGA / "clean/docs.jsonl", "w") as fh:
@@ -588,36 +598,58 @@ def _prose_sentences(text):
 
 
 def corpus(seed=0):
+    """Balance, gate, write. Units of the gate: one train document or one dataset sentence (MNTP), one sentence
+    (CGSA). A unit that overlaps the private corpora stops the build; a unit that overlaps an evaluation suite is
+    dropped. Each corpus file gets a <file>.provenance.json."""
+    a = allowlist()
     rng = random.Random(seed)
     docs = [json.loads(l) for l in open(MEGA / "clean/docs.jsonl")]
+    for d in docs:
+        if "source_id" not in d:
+            raise dp.SourceRejected("clean/docs.jsonl predates the allowlist (no source_id): re-run gather + clean")
+        a.source(d["source_id"], roles=("train", "heldout"))
     train = _balance([d for d in docs if d["split"] == "train"], rng)
     heldout = [d for d in docs if d["split"] == "heldout"]
-    hf_sents = [scrub(s) for s in hf_train_sentences()]
+    hf_sents = [(sid, scrub(s)) for sid, s in hf_train_sentences()]
     out = MEGA / "corpus"
     out.mkdir(exist_ok=True)
+    reports = dp.default_report_dir()
     # MNTP: one paragraph per line, documents contiguous; run_kmp.py concatenates lines and chunks by length
+    units = [(d["source_id"], d["text"]) for d in train] + hf_sents
+    g_mntp = dp.run_gate("mntp", units, a, drop_eval=True, report_dir=reports)
+    keep = set(g_mntp["kept"])
+    train = [d for i, d in enumerate(train) if i in keep]
+    hf_sents = [u for i, u in enumerate(hf_sents, start=len(units) - len(hf_sents)) if i in keep]
     with open(out / "corpus_mntp.txt", "w") as fh:
         for d in train:
             for para in _paragraphs(d["text"]):
                 fh.write(" ".join(para.split()) + "\n")
-        for s in hf_sents:
+        for _, s in hf_sents:
             fh.write(s + "\n")
-    seen, n_cgsa = set(), 0
-    with open(out / "corpus_cgsa.txt", "w") as fh:
-        pool = [s for d in train for s in _prose_sentences(d["text"])] + hf_sents
-        rng.shuffle(pool)
-        for s in pool:
-            k = s.lower()
-            if k in seen:
-                continue
+    seen, cgsa = set(), []
+    pool = [(d["source_id"], s) for d in train for s in _prose_sentences(d["text"])] + hf_sents
+    rng.shuffle(pool)
+    for sid, s in pool:
+        k = s.lower()
+        if k not in seen:
             seen.add(k)
+            cgsa.append((sid, s))
+    g_cgsa = dp.run_gate("cgsa", cgsa, a, drop_eval=True, report_dir=reports)
+    cgsa = [cgsa[i] for i in g_cgsa["kept"]]
+    with open(out / "corpus_cgsa.txt", "w") as fh:
+        for _, s in cgsa:
             fh.write(s + "\n")
-            n_cgsa += 1
+    n_cgsa = len(cgsa)
     with open(out / "corpus_heldout.txt", "w") as fh:
         for d in heldout:
             for para in _paragraphs(d["text"]):
                 if len(para) >= 120:
                     fh.write(" ".join(para.split()) + "\n")
+    mntp_units = [(d["source_id"], d["text"]) for d in train] + hf_sents
+    prov = {"corpus_mntp.txt": dp.write_manifest("mntp_corpus", out / "corpus_mntp.txt", dp.count_units(mntp_units),
+                                                 a, g_mntp, inputs=[MEGA / "clean/docs.jsonl"]),
+            "corpus_cgsa.txt": dp.write_manifest("cgsa_corpus", out / "corpus_cgsa.txt", dp.count_units(cgsa),
+                                                 a, g_cgsa, inputs=[MEGA / "clean/docs.jsonl"])}
     files = {}
     for p in sorted(out.glob("*.txt")):
         files[p.name] = {"sha256": hashlib.sha256(p.read_bytes()).hexdigest(), "bytes": p.stat().st_size,
@@ -634,7 +666,10 @@ def corpus(seed=0):
                 "train_chars": total, "mix_share": {k: round(v / total, 4) for k, v in mix.items()},
                 "top_projects_share": {k: round(v / total, 4) for k, v in top.most_common(15)},
                 "heldout_projects": sorted({d["project"] for d in heldout}),
-                "caps": {"project": MAX_PROJECT_SHARE, "synth": MAX_SYNTH_SHARE}}
+                "caps": {"project": MAX_PROJECT_SHARE, "synth": MAX_SYNTH_SHARE},
+                "gate": {"mntp_eval_dropped": len(g_mntp["eval_hits"]), "cgsa_eval_dropped": len(g_cgsa["eval_hits"]),
+                         "private_hits": 0},
+                "provenance": {k: v.name for k, v in prov.items()}}
     json.dump(manifest, open(MEGA / "manifest.json", "w"), indent=1)
     print(json.dumps({k: v for k, v in manifest.items() if k != "top_projects_share"}, indent=1))
     print("top projects:", manifest["top_projects_share"])
