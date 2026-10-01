@@ -144,6 +144,7 @@ class Allowlist:
         self.deny = [re.compile(x, re.I) for x in spec.get("deny_path_patterns", []) + markers.get("path_patterns", [])]
         self.private_terms = [t.lower() for t in markers.get("content_terms", [])]
         self.private_corpora = markers.get("private_corpora", [])
+        self.eval_kbs = markers.get("eval_kbs", [])          # private eval KBs (sqlite) for the eval 13-gram set
         if strict and not self.has_markers:
             raise PrivateDataError(f"strict build without {MARKERS}: create it next to {ALLOWLIST} (it is git-ignored) "
                                    "with path_patterns / content_terms / private_corpora, or set "

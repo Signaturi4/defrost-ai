@@ -310,7 +310,10 @@ def eval_grams():
         for line in open(bench):
             it = json.loads(line)
             g |= grams13(it["question"]) | grams13(it.get("answer", ""))
-    for kb in ["~/heldout-memory/text_kb.sqlite", "~/client-memory/text_kb.sqlite", "~/books-memory/text_kb.sqlite"]:
+    kbs = ["~/heldout-memory/text_kb.sqlite", "~/books-memory/text_kb.sqlite", *allowlist().eval_kbs]  # private: markers file
+    for kb in kbs:
+        if not Path(kb).expanduser().is_file():                    # sqlite3.connect would create an empty file
+            raise FileNotFoundError(f"eval KB {kb} is missing: the leakage gate would silently miss its sections")
         for (t,) in sqlite3.connect(Path(kb).expanduser()).execute("SELECT text FROM sections"):
             g |= grams13(t)
     D = Path("defrost_graph/data/public_ir")
