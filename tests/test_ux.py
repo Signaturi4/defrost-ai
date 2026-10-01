@@ -101,3 +101,12 @@ def test_status_nests_the_notes_domain(monkeypatch, capsys):
     cli.main(["status"])
     out = capsys.readouterr().out
     assert "app-context" not in out and "notes and decisions: 2 files" in out
+
+
+def test_status_survives_a_deleted_workspace(tmp_path, monkeypatch):
+    from defrost_ai import project_setup
+    monkeypatch.setenv("DEFROST_HOME", str(tmp_path))
+    (tmp_path / "domains.json").write_text(json.dumps(
+        {"domains": {"gone": {"workspace": str(tmp_path / "gone.workspace.json")}}}))
+    rows = project_setup.status()
+    assert rows[0]["domain"] == "gone" and rows[0]["stale"] and "missing" in rows[0]["why"]

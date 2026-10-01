@@ -365,6 +365,11 @@ def status(domain=None) -> list[dict]:
     for name, reg in read_registry()["domains"].items():
         if domain and name != domain:
             continue
+        if not Path(reg["workspace"]).expanduser().exists():          # files deleted by hand: report, don't crash
+            rows.append({"domain": name, "built_at": None, "counts": None, "stale": True,
+                         "why": f"workspace file missing ({reg['workspace']}); run `defrost setup` in the repo again",
+                         "triggers": []})
+            continue
         stale, why = changed_since_build(name)
         st = json.loads(state_file(name).read_text()) if state_file(name).exists() else {}
         man_f = Path(json.loads(Path(reg["workspace"]).read_text())["out"]).expanduser() / "manifest.json"
