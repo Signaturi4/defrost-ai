@@ -44,27 +44,36 @@ def _chain_key(adapters) -> str:
     return h.hexdigest()[:16]
 
 
-def load_backbone(weights: Path, own_adapter: Path):
-    """base (fp32, sdpa) -> MNTP -> CGSA -> own adapter, all merged. The merged model is saved once to
-    ~/.cache/kev-memory/merged/<name>-<key> (safetensors) and loaded from there afterwards: same weights, no peft
-    merge at start-up. KEV_MEMORY_MERGED_CACHE=0 disables the cache."""
-    from transformers import AutoModel
+def merged_dir(weights: Path, own_adapter: Path) -> Path:
+    """Directory of the merged model (config.json + model.safetensors, fp32): base -> MNTP -> CGSA -> own adapter.
+    Built once with peft and kept in ~/.cache/kev-memory/merged/<name>-<key>; the MLX backend reads it too."""
     adapters = (weights / "base-adapters/mntp", weights / "base-adapters/cgsa", own_adapter)
     cache = MERGED_CACHE / f"{Path(own_adapter).name}-{_chain_key(adapters)}"
-    use_cache = os.environ.get("KEV_MEMORY_MERGED_CACHE", "1") != "0"
-    if use_cache and (cache / "config.json").exists():
-        return AutoModel.from_pretrained(cache, dtype=torch.float32, attn_implementation="sdpa")
-    model = AutoModel.from_pretrained(BASE_MODEL, revision=BASE_REVISION, dtype=torch.float32, attn_implementation="sdpa")
-    for adapter in adapters:
-        model = merge_adapter(model, adapter)
-    if use_cache:
-        tmp = cache.with_name(cache.name + f".tmp{os.getpid()}")
-        model.save_pretrained(tmp, safe_serialization=True)
+    if not (cache / "config.json").exists():
+        _merge(adapters).save_pretrained(tmp := cache.with_name(cache.name + f".tmp{os.getpid()}"),
+                                         safe_serialization=True)
         if cache.exists():
             shutil.rmtree(tmp, ignore_errors=True)
         else:
             os.replace(tmp, cache)
+    return cache
+
+
+def _merge(adapters):
+    from transformers import AutoModel
+    model = AutoModel.from_pretrained(BASE_MODEL, revision=BASE_REVISION, dtype=torch.float32, attn_implementation="sdpa")
+    for adapter in adapters:
+        model = merge_adapter(model, adapter)
     return model
+
+
+def load_backbone(weights: Path, own_adapter: Path):
+    """The merged backbone in fp32 with SDPA attention, loaded from the merged-weights cache (same weights as merging
+    the adapters at start-up, without the peft cost). KEV_MEMORY_MERGED_CACHE=0 merges in memory instead."""
+    from transformers import AutoModel
+    if os.environ.get("KEV_MEMORY_MERGED_CACHE", "1") == "0":
+        return _merge((weights / "base-adapters/mntp", weights / "base-adapters/cgsa", own_adapter))
+    return AutoModel.from_pretrained(merged_dir(weights, own_adapter), dtype=torch.float32, attn_implementation="sdpa")
 
 
 def load_tokenizer():

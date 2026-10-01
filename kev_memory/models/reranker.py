@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from kev_memory.models.backbone import bidirectional_mask, load_backbone, load_tokenizer
+from kev_memory.models.backbone import bidirectional_mask, load_backbone, load_tokenizer, merged_dir
 from kev_memory.models.weights import RETRIEVAL_INSTRUCTION, device as pick_device, models_dir
 
 
@@ -37,18 +37,30 @@ class _ScoreHead(torch.nn.Module):
 
 class KevReranker:
     def __init__(self, weights: Path | None = None, device: str | None = None, max_query: int = 64, max_doc: int = 384):
+        from kev_memory.models import mlx_backend
         weights = weights or models_dir()
         self.device = pick_device(device)
         self.tok = load_tokenizer()
+        state = torch.load(weights / "kev-rerank/head.pt", map_location="cpu")
+        self.max_query, self.max_doc = max_query, max_doc
+        self.backend = "mlx" if device is None and mlx_backend.available() else "torch"
+        if self.backend == "mlx":                                           # Apple GPU via MLX
+            self._merged = merged_dir(weights, weights / "kev-rerank")
+            # fp16: same speed as bf16 on the M5 GPU and ~8x closer to fp32 (10 vs 7 mantissa bits). Qwen can overflow
+            # in fp16, so a query whose scores come back non-finite is recomputed in fp32 (see score()).
+            self.mlx = mlx_backend.MLXBackbone(self._merged, os.environ.get("KEV_RERANK_DTYPE", "fp16"))
+            self._mlx32 = None
+            self.mlx_head = mlx_backend.MLXScoreHead(state)
+            self.model = None
+            self.token_budget = int(os.environ.get("KEV_RERANK_TOKEN_BUDGET", 2048))   # 2048 fastest on M5 (1.6 s vs 2.0 s at 8192)
+            return
         backbone = load_backbone(weights, weights / "kev-rerank")
         self.model = _ScoreHead(backbone, backbone.config.hidden_size)
-        state = torch.load(weights / "kev-rerank/head.pt", map_location="cpu")
         self.model.norm.load_state_dict(state["norm"])
         self.model.head.load_state_dict(state["head"])
         self.model.to(self.device).eval()
         self.dtype = _dtype(self.device)
         self.model.backbone.to(self.dtype)                                  # LayerNorm + Linear head stay fp32
-        self.max_query, self.max_doc = max_query, max_doc
         self.token_budget = int(os.environ.get("KEV_RERANK_TOKEN_BUDGET", 2048))   # padded tokens per pass (flat 512-2048 on MPS fp32; larger is slower)
 
     def _encode_pairs(self, query: str, texts: list[str]) -> list[list[int]]:
@@ -68,6 +80,14 @@ class KevReranker:
     def _pairs(self, query: str, texts: list[str]):
         return self._pad(self._encode_pairs(query, texts))
 
+    def _mlx_scores(self, backbone, seqs, batches) -> np.ndarray:
+        import mlx.core as mx
+        outs = []
+        for idx in batches:
+            ids, att = self._pad([seqs[i] for i in idx])
+            outs.append(self.mlx_head(backbone.mean_pool(ids.numpy(), att.numpy().astype(bool))))
+        return np.array(mx.concatenate(outs), dtype=np.float32)            # one evaluation for the whole query
+
     @torch.no_grad()
     def score(self, query: str, texts: list[str], batch_size: int | None = None) -> np.ndarray:
         """Pairs are sorted by length and cut into batches of at most `token_budget` padded tokens, so short sections
@@ -83,11 +103,18 @@ class KevReranker:
                 batches.append(cur); cur = []
             cur.append(i)
         batches.append(cur)
-        outs = []
-        for idx in batches:
-            ids, att = self._pad([seqs[i] for i in idx])
-            outs.append(self.model(ids.to(self.device), att.to(self.device)))
-        flat = torch.cat(outs).float().cpu().numpy()
+        if self.backend == "mlx":
+            flat = self._mlx_scores(self.mlx, seqs, batches)
+            if not np.isfinite(flat).all():                                 # fp16 overflow: redo this query in fp32
+                from kev_memory.models import mlx_backend
+                self._mlx32 = self._mlx32 or mlx_backend.MLXBackbone(self._merged, "fp32")
+                flat = self._mlx_scores(self._mlx32, seqs, batches)
+        else:
+            outs = []
+            for idx in batches:
+                ids, att = self._pad([seqs[i] for i in idx])
+                outs.append(self.model(ids.to(self.device), att.to(self.device)))
+            flat = torch.cat(outs).float().cpu().numpy()
         out = np.empty(len(texts), dtype=flat.dtype)
         out[[i for idx in batches for i in idx]] = flat
         return out

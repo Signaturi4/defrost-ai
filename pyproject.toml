@@ -19,6 +19,7 @@ mcp = ["mcp>=1.2,<2"]                 # `kev-memory mcp`: MCP server for Claude 
 shepherd = ["shepherd-ai"]             # reviewable memory refreshes + memory-grounded agent tasks
 eval = ["ragas==0.4.3", "langchain-community>=0.3,<0.3.28"]
 dev = ["pytest>=8"]
+mac = ["mlx>=0.29; sys_platform == 'darwin' and platform_machine == 'arm64'", "mlx-lm>=0.28; sys_platform == 'darwin' and platform_machine == 'arm64'"]   # Apple GPU backend (MLX), auto-used on macOS
 
 [project.scripts]
 kev-memory = "kev_memory.cli:main"
