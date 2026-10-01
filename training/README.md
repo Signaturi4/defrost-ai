@@ -98,6 +98,8 @@ next to its output. `source/defrost_graph/bilm/data_provenance.py` implements bo
 - `content_terms`: a document that contains one, as a whole word, fails the build. The term is never printed.
 - `private_corpora`: private text for the leakage gate (directories, `.jsonl`, `.txt`, memory `.sqlite` files). A
   `{"path", "match"}` entry keeps only files whose relative path matches.
+- `eval_kbs`: private evaluation memories (`text_kb.sqlite` paths). `sup_data` adds their sections to the eval
+  13-gram set next to the public heldout and books KBs; a listed file that is missing stops the build.
 - Builds are strict by default: a missing markers file is an error. `DEFROST_PROVENANCE_STRICT=0` allows a public
   rebuild without it.
 

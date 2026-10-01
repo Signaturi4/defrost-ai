@@ -197,3 +197,9 @@ def test_write_manifest_refuses_unlisted_or_heldout_sources(clones, tmp_path):
     for sid in ("local/Downloads", "oss:held"):
         with pytest.raises(dp.SourceRejected):
             dp.write_manifest("s", f, {sid: {"n_docs": 1, "n_chars": 1}}, allow(clones))
+
+
+def test_markers_eval_kbs_default_to_empty():
+    spec = {"schema": dp.SOURCES_SCHEMA, "sources": []}
+    assert dp.Allowlist(spec, strict=False).eval_kbs == []
+    assert dp.Allowlist(spec, markers={"eval_kbs": ["~/x/text_kb.sqlite"]}).eval_kbs == ["~/x/text_kb.sqlite"]
