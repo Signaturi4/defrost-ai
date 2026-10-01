@@ -9,6 +9,7 @@ or edited sections are encoded; graphify caches its per-file extraction. The SQL
 half-built memory; the previous build is kept as <out>.previous for rollback."""
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import shutil
@@ -24,6 +25,9 @@ from defrost_ai.ingest.code_graph import build_code_graph
 from defrost_ai.ingest.documents import document_id, split_sections
 from defrost_ai.ingest.links import core_paths, link_section, symbol_index
 from defrost_ai.models.encoder import ENCODER_ID
+
+
+EMBED_CHUNK = 16                       # sections per model call: a search waits at most one chunk during a build
 
 
 def _sha(text: str) -> str:
@@ -51,7 +55,9 @@ def file_times(ws: Workspace, nodes: list[dict]) -> dict[str, int]:
     return out
 
 
-def build(workspace: str | Path, models=None, log=print) -> dict:
+def build(workspace: str | Path, models=None, log=print, model_lock=None) -> dict:
+    """model_lock: held only around each encoding chunk (the service passes its model lock, so searches run between
+    chunks and during the CPU stages); None = no locking (CLI builds)."""
     ws = Workspace.load(workspace)
     out = ws.out
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -118,8 +124,12 @@ def build(workspace: str | Path, models=None, log=print) -> dict:
         from defrost_ai.memory import Models
         models = models or Models()
         by_key = {k: t for k, t in zip(keys, texts)}
-        vecs = models.retriever.embed_documents([by_key[k] for k in missing])
-        cache.update({k: v.astype(np.float16) for k, v in zip(missing, vecs)})
+        lock = model_lock or contextlib.nullcontext()
+        for i in range(0, len(missing), EMBED_CHUNK):
+            part = missing[i:i + EMBED_CHUNK]
+            with lock:
+                vecs = models.retriever.embed_documents([by_key[k] for k in part])
+            cache.update({k: v.astype(np.float16) for k, v in zip(part, vecs)})
     dim = next(iter(cache.values())).shape[0] if cache else 896
     section_vecs = np.stack([cache[k] for k in keys]).astype(np.float16) if keys else np.zeros((0, dim), np.float16)
     np.savez(stage / store.SECTION_VECTORS, ids=np.array([r[0] for r in rows]), vecs=section_vecs,
