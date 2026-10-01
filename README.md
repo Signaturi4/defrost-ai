@@ -10,6 +10,13 @@
 </p>
 
 <p align="center">
+  <sub><b>What it is:</b> a local hybrid RAG for Claude Code repositories, over docs and code.
+  BM25 + a dense retriever (Defrost-Ret-B) + a reranker (Defrost-Rerank) find the doc sections, and the AST code graph
+  links each one to the code it names. A git-backed working memory sits beside it: notes and decisions, with
+  pre-commit rules on its layout, refreshed by git hooks. It is served over MCP and the CLI.</sub>
+</p>
+
+<p align="center">
   <a href="https://github.com/Signaturi4/defrost-ai/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Signaturi4/defrost-ai/ci.yml?branch=main&style=flat-square&label=ci&labelColor=0B0F14"></a>
   <a href="https://github.com/Signaturi4/defrost-ai/releases"><img alt="Release" src="https://img.shields.io/github/v/release/Signaturi4/defrost-ai?style=flat-square&labelColor=0B0F14&color=2F6FEB"></a>
   <a href="#license"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-2F6FEB?style=flat-square&labelColor=0B0F14"></a>
