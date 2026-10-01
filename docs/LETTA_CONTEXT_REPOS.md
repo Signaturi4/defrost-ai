@@ -67,7 +67,7 @@ is compiled into its prompt. Retrieval is "read the index, then open the file". 
 |---|---|---|
 | holds | what the *agent* has learned (identity, preferences, corrections, notes) | what the *project* says: docs sections + linked code |
 | size | small, curated (≤ ~65k chars pinned, 15–25 files) | large (hundreds to thousands of sections, multi-repo) |
-| retrieval | pinned core + index files + grep | BM25 + Kev-Ret-B + Kev-Rerank, adaptive k, citations |
+| retrieval | pinned core + index files + grep | BM25 + Defrost-Ret-B + Defrost-Rerank, adaptive k, citations |
 | writer | the agent and its memory workers | the project's own docs (plus doc sync, handoff notes) |
 | freshness | every change is a commit | incremental rebuild on merge/commit/schedule |
 | audit | git history of every memory edit | build manifests + rollback; conflict log (jsonl) |
@@ -79,14 +79,14 @@ run together, and four patterns are worth taking over.
 
 1. **Index the MemFS as a defrost domain** (no new code). A MemFS is a git repo of markdown with name and description
    frontmatter, which is exactly what defrost indexes.
-   - Setup: `kev-memory setup ~/.letta/agents/<id>/memory --domain letta-<agent> --on-main-merge`. Our post-commit
+   - Setup: `defrost setup ~/.letta/agents/<id>/memory --domain letta-<agent> --on-main-merge`. Our post-commit
      hook refreshes the index after each memory commit, in a few seconds.
    - Benefit: ranked semantic search over deferred memory once it outgrows "read the index". Letta's
      defragmentation exists because index-plus-grep stops scaling.
-   - Usage: Letta Code supports stdio MCP servers (`src/mcp-client.ts`), so `kev-memory mcp` can be attached there.
+   - Usage: Letta Code supports stdio MCP servers (`src/mcp-client.ts`), so `defrost mcp` can be attached there.
 2. **Make defrost's own working memory a context repository.** Today, handoff notes
-   (`~/.kev-memory/<domain>-notes/`) and conflict decisions (`<domain>.conflicts.jsonl`) are plain files.
-   - Proposal: one git repo per domain, `~/.kev-memory/<domain>-context/`, in Letta's v2 layout:
+   (`~/.defrost-ai/<domain>-notes/`) and conflict decisions (`<domain>.conflicts.jsonl`) are plain files.
+   - Proposal: one git repo per domain, `~/.defrost-ai/<domain>-context/`, in Letta's v2 layout:
      - `MEMORY.md` as the index;
      - `handoffs/` and `decisions/conflicts/`, each file with name and description frontmatter;
      - one commit per handoff or decision.
@@ -129,13 +129,17 @@ header.
 
 | defrost-ai module | ported from (Letta Code, commit 3687ea51) | what changed |
 |---|---|---|
-| `kev_memory/context_constraints.py` | `src/memory-frontmatter.ts`, `src/memory-constraints.ts`, `src/agent/memory-constraints.ts` | one layout (memfs v2); allowed keys are `name`, `description` and the protected `read_only`; config edits need `DEFROST_CONTEXT_CONFIG_UPDATE=1` |
-| `kev_memory/context_repo.py` | `src/agent/memory-format.ts`, `src/agent/memory-git-hooks.ts`, `src/agent/memory-scanner.ts`, maintenance skills | one repository per project domain, not per agent; indexes are generated from frontmatter; sync is a plain git remote, with no Letta server |
-| `kev_memory/worktree.py` | `src/agent/memory-worktree.ts`, `src/agent/memory-operation.ts`, `src/utils/worktree-lock.ts` | `fcntl` lock; merges are fast-forward only; on a conflict the branch is kept, with no LLM repair |
-| `kev_memory/compact_handoff.py` | idea from `src/agent/reflection-runs.ts` | extractive, with no model calls |
+| `defrost_ai/context_constraints.py` | `src/memory-frontmatter.ts`, `src/memory-constraints.ts`, `src/agent/memory-constraints.ts` | one layout (memfs v2); allowed keys are `name`, `description` and the protected `read_only`; config edits need `DEFROST_CONTEXT_CONFIG_UPDATE=1` |
+| `defrost_ai/context_repo.py` | `src/agent/memory-format.ts`, `src/agent/memory-git-hooks.ts`, `src/agent/memory-scanner.ts`, maintenance skills | one repository per project domain, not per agent; indexes are generated from frontmatter; sync is a plain git remote, with no Letta server |
+| `defrost_ai/worktree.py` | `src/agent/memory-worktree.ts`, `src/agent/memory-operation.ts`, `src/utils/worktree-lock.ts` | `fcntl` lock; merges are fast-forward only; on a conflict the branch is kept, with no LLM repair |
+| `defrost_ai/compact_handoff.py` | idea from `src/agent/reflection-runs.ts` | extractive, with no model calls |
 
 **The context repository.**
-- **Where:** `~/.kev-memory/<domain>.context/`, a git repo on branch `main`.
+- **Where:** `<project>/defrost-memory/`, a git repo on branch `main`, visible next to your code. Setup hides it
+  from the project's git (`.git/info/exclude`) and from the project's search domain. A pointer file
+  `~/.defrost-ai/<domain>.context.path` records the location. `--memory-dir NAME` picks another folder;
+  `--memory-home` (or `defrost context place home`) keeps it in `~/.defrost-ai/<domain>.context/`. An existing repo is
+  moved, not copied.
 - **Layout:**
   - root `MEMORY.md` is the map;
   - `project.md` is the core file;
@@ -144,7 +148,7 @@ header.
   - `.memfs.config.json` sets the limits.
 - **Rules:** every write is one commit by `defrost-ai`. The pre-commit hook embeds the validator source, so it runs
   without the package installed.
-- **Post-commit hook:** re-indexes the search domain `<domain>-context` and, if `kev-memory context remote URL` was
+- **Post-commit hook:** re-indexes the search domain `<domain>-context` and, if `defrost context remote URL` was
   set, pushes to the team remote.
 - **Migration:** the old notes folder and the `conflicts.jsonl` log are migrated on the first write.
 
@@ -152,13 +156,14 @@ header.
 
 | command | what it does |
 |---|---|
-| `kev-memory context init` | creates the repo and registers `<domain>-context` |
-| `kev-memory context check` | runs the hook's validation on the working tree |
-| `kev-memory context log` | the audit trail, also the MCP tool `memory_context_log` |
-| `kev-memory context brief` | the root map plus core files, within a word budget |
-| `kev-memory context defrag` | archives old notes, splits oversize files and rebuilds indexes, as a worktree job that fast-forwards `main` |
-| `kev-memory context branches [--repo .]`, `context merge <branch>` | review and merge job branches |
-| `kev-memory context remote URL\|none` | sets or removes the team remote |
+| `defrost context init` | creates the repo and registers `<domain>-context` |
+| `defrost context where`, `context place [PATH\|home] [--dir NAME]` | shows or moves the repo |
+| `defrost context check` | runs the hook's validation on the working tree |
+| `defrost context log` | the audit trail, also the MCP tool `memory_context_log` |
+| `defrost context brief` | the root map plus core files, within a word budget |
+| `defrost context defrag` | archives old notes, splits oversize files and rebuilds indexes, as a worktree job that fast-forwards `main` |
+| `defrost context branches [--repo .]`, `context merge <branch>` | review and merge job branches |
+| `defrost context remote URL\|none` | sets or removes the team remote |
 
 **Changed behaviour.**
 - **`--docs-auto`:** the background `claude -p /document-changes` now runs in a worktree of the project on

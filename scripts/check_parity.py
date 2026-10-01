@@ -1,14 +1,14 @@
 """Parity check: does this package reproduce the evaluated system exactly?
 
-Compares a memory built by kev-memory with the research build (kev repo) on the same sources:
+Compares a memory built by defrost with the research build (defrost repo) on the same sources:
   1. sections: ids, heading paths, line ranges, text
-  2. vectors: Kev-Ret-B section vectors (max |diff|, min cosine)
+  2. vectors: Defrost-Ret-B section vectors (max |diff|, min cosine)
   3. rankings: for each question, BM25 top-50, dense top-50 and the reranker order, against the cached research run
   4. metrics: nDCG@10 per mode on the suite split
 
-    python scripts/check_parity.py --memory ~/.kev-memory/parity-heldout \\
+    python scripts/check_parity.py --memory ~/.defrost-ai/parity-heldout \\
         --research-db ~/heldout-memory/text_kb.sqlite \\
-        --research-vectors ~/heldout-memory/vectors-kevret-sup-B-final-cgsa.npz \\
+        --research-vectors ~/heldout-memory/vectors-defrostret-sup-B-final-cgsa.npz \\
         --research-rows /path/kev/runs/kev_graph/router/heldout__kevret_runs_kev_graph_sup-B_final+cgsa.json \\
         --suite benchmarks/heldout/questions.jsonl --split dev"""
 import argparse
@@ -17,8 +17,8 @@ import sqlite3
 
 import numpy as np
 
-from kev_memory.evaluation.benchmark import run as benchmark
-from kev_memory.memory import Memory, Models
+from defrost_ai.evaluation.benchmark import run as benchmark
+from defrost_ai.memory import Memory, Models
 
 
 def main():

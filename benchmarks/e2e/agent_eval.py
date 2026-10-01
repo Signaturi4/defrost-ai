@@ -4,7 +4,7 @@ Arms (same model, prompt, turn cap and file tools: Read, Grep, Glob). Each arm r
   none      file tools only
   graphify  stock graphify 0.4.32 as a user installs it: full semantic graph (/graphify skill), `graphify claude
             install` (CLAUDE.md rules + PreToolUse hook), `graphify` CLI allowed via Bash, MCP server
-  kev       the graphify fork installed the same way over the same graph; the only differences are the memory tools
+  defrost       the graphify fork installed the same way over the same graph; the only differences are the memory tools
             (CLI `graphify memory search`, MCP `memory_search`) and the one CLAUDE.md rule that points to them
 Scored: AnswerAccuracy (RAGAS NVIDIA, Haiku judge) vs the reference answer, code_named (answer names a gold symbol),
 cost (USD), turns, wall time.
@@ -32,7 +32,7 @@ find the answer in the project's documentation and code. Answer concisely (at mo
 line starting with "Code:", name the function(s) or class(es) that implement this behaviour.
 
 Question: {q}"""
-ARMS = ("none", "graphify", "kev")
+ARMS = ("none", "graphify", "defrost")
 
 
 def mcp_config(arm, comp):
@@ -40,7 +40,7 @@ def mcp_config(arm, comp):
     if arm == "none":
         return '{"mcpServers":{}}', ""
     py = STOCK_PY if arm == "graphify" else FORK_PY
-    env = {"KEV_MEMORY_DOMAINS": "e2e"} if arm == "kev" else {}
+    env = {"DEFROST_DOMAINS": "e2e"} if arm == "defrost" else {}
     cfg = {"mcpServers": {"graphify": {"command": py, "args": ["-m", "graphify.serve", graph], "env": env}}}
     return json.dumps(cfg), ",mcp__graphify"
 
@@ -51,7 +51,7 @@ def run_agent(q, arm):
     tools = "Read,Grep,Glob" if arm == "none" else "Read,Grep,Glob,Bash"
     allowed = "Read,Grep,Glob" if arm == "none" else "Read,Grep,Glob,Bash(graphify:*)" + extra
     env = dict(os.environ, PATH=str(Path(STOCK_PY if arm == "graphify" else FORK_PY).parent) + ":" + os.environ["PATH"],
-               KEV_MEMORY_DOMAINS="e2e")
+               DEFROST_DOMAINS="e2e")
     cmd = ["claude", "-p", PROMPT.format(q=q["question"]), "--model", "sonnet", "--output-format", "stream-json",
            "--verbose", "--max-turns", "20", "--strict-mcp-config", "--mcp-config", cfg, "--no-session-persistence",
            "--allowedTools", allowed, "--tools", tools]
@@ -132,7 +132,7 @@ def main():
                     "cost_usd": boot([r.get("cost") or 0 for _, r in rows]), "turns": boot([r.get("turns") or 0 for _, r in rows]),
                     "seconds": boot([r.get("seconds") or 0 for _, r in rows])}
     paired = {}
-    for a in ("none", "kev"):
+    for a in ("none", "defrost"):
         d = [cache[f"{q['id']}|{a}"]["nv_accuracy"] - cache[f"{q['id']}|graphify"]["nv_accuracy"] for q in pick
              if cache[f"{q['id']}|{a}"].get("nv_accuracy") is not None and cache[f"{q['id']}|graphify"].get("nv_accuracy") is not None]
         c = [(cache[f"{q['id']}|{a}"].get("cost") or 0) - (cache[f"{q['id']}|graphify"].get("cost") or 0) for q in pick]

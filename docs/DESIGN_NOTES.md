@@ -46,7 +46,7 @@ precision rules:
 | bare lowercase word (`pending`) | 0.12 | status values, roles, columns, package names |
 | target in a test file | 0.00 | `worker`, `query` matched to test helpers |
 
-These rules now apply (`kev_memory/ingest/links.py`):
+These rules now apply (`defrost_ai/ingest/links.py`):
 - **Tests and examples:** test, spec and example files are link targets only through an explicit file path.
   Nested functions and builtins are never targets.
 - **Methods** are indexed as `Class.method`. A bare method name only answers a code-shaped mention.
@@ -66,7 +66,7 @@ were 15 of 16 correct. Weighted by how common each kind is, the estimated precis
 
 ## Embedding model in use
 
-The embedding model is **Kev-Ret-B**, trained for this project:
+The embedding model is **Defrost-Ret-B**, trained for this project:
 
 - **Base:** Qwen2.5-0.5B (revision `060db649`), a causal model.
 - **Converted to an encoder** so every token sees the whole text, in two LoRA stages:
@@ -78,13 +78,13 @@ The embedding model is **Kev-Ret-B**, trained for this project:
 - **Input format:** documents are embedded as "heading path + text"; queries get a fixed instruction prefix that
   is left out of the pooling.
 
-Kev-Ret-B works next to BM25 (SQLite FTS5). **Kev-Rerank** (same backbone + LoRA + a score head, a cross-encoder)
-reorders the candidates when BM25 and Kev-Ret-B disagree on the top section (the `fast` policy). The shipped version is
-**Kev-Rerank v2** (weights v1.1.0). It was trained with harder negatives: other sections of the same file, and
+Defrost-Ret-B works next to BM25 (SQLite FTS5). **Defrost-Rerank** (same backbone + LoRA + a score head, a cross-encoder)
+reorders the candidates when BM25 and Defrost-Ret-B disagree on the top section (the `fast` policy). The shipped version is
+**Defrost-Rerank v2** (weights v1.1.0). It was trained with harder negatives: other sections of the same file, and
 changelog / release-note sections that mention the same names. It also added long-prose questions. On the locked
 test it beats v1 by +0.024 nDCG@10 in `fast` mode ([RESULTS.md](RESULTS.md) §2.2).
 
 Can a bigger backbone be dropped in? No. The adapters are shaped for the 0.5B model (hidden size 896, 24 layers),
 while Qwen2.5-1.5B has hidden size 1536 and 28 layers, so they do not load on it. Without our training, neither
 backbone retrieves well: on held-out dev, raw 0.5B scores 0.132 nDCG@10 and raw 1.5B scores 0.027, against 0.885 for
-Kev-Ret-B. A 1.5B version means retraining all four stages.
+Defrost-Ret-B. A 1.5B version means retraining all four stages.

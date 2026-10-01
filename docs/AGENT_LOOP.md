@@ -23,11 +23,11 @@ flowchart LR
         F["File tools:<br/>Read · Grep · Glob · Bash"]
     end
 
-    subgraph Service["kev-memory service (resident, 127.0.0.1:8765)"]
+    subgraph Service["defrost service (resident, 127.0.0.1:8765)"]
         S1["BM25<br/>SQLite FTS5 · ~2 ms"]
-        S2["Kev-Ret-B<br/>dense query vector · ~0.1 s"]
+        S2["Defrost-Ret-B<br/>dense query vector · ~0.1 s"]
         P{"fast policy:<br/>top-1 agrees?"}
-        S3["Kev-Rerank v2<br/>MLX fp16 · ~1.5 s<br/>score cache"]
+        S3["Defrost-Rerank v2<br/>MLX fp16 · ~1.5 s<br/>score cache"]
         K["adaptive k (1-5)<br/>+ trust header<br/>+ verify in / ! flags"]
         S1 --> P
         S2 --> P
@@ -35,7 +35,7 @@ flowchart LR
         P -- "no" --> S3 --> K
     end
 
-    subgraph Store["Per-project memory (~/.kev-memory/&lt;domain&gt;)"]
+    subgraph Store["Per-project memory (~/.defrost-ai/&lt;domain&gt;)"]
         D1[("knowledge.sqlite<br/>sections · links · FTS")]
         D2[("section_vectors.npz")]
         D3[("code_graph.json<br/>(graphify AST)")]

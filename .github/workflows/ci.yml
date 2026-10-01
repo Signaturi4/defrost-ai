@@ -34,9 +34,9 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
-          python -m kev_memory.cli --help > /dev/null
-          python -c "import kev_memory, kev_memory.project_setup, kev_memory.service.client; print(kev_memory.build_id())"
+          python -m defrost_ai.cli --help > /dev/null
+          python -c "import defrost_ai, defrost_ai.project_setup, defrost_ai.service.client; print(defrost_ai.build_id())"
       - name: Shell scripts parse
         run: |
           bash -n install.sh
-          bash -n kev_memory/assets/doc_rules/install.sh
+          bash -n defrost_ai/assets/doc_rules/install.sh

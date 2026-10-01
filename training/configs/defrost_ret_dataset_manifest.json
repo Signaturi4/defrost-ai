@@ -1,0 +1,52 @@
+{
+  "files": {
+    "cgsa-adapter/adapter_config.json": {
+      "sha256": "0b5018d83f3606ca7c6571ecb81e158427643c3fcfff3830b26d631240cc813f",
+      "bytes": 813
+    },
+    "cgsa-adapter/adapter_model.safetensors": {
+      "sha256": "4069930e4774b1de73bac70a0ab266dc65cc45ba990a363305b10e8e5750d82c",
+      "bytes": 35235088
+    },
+    "code/defrost_graph/__init__.py": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "code/defrost_graph/bilm/__init__.py": {
+      "sha256": "d3b9777439d09e0f85b10e6ce12567e4e168fb86aeda3590599cc304609a2002",
+      "bytes": 309
+    },
+    "code/defrost_graph/bilm/bridge.py": {
+      "sha256": "8aee8243ab9ffc66ff77be041ae39f333ac48256fb673d9454865a1dde442a18",
+      "bytes": 8796
+    },
+    "code/defrost_graph/bilm/kaggle/__init__.py": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "code/defrost_graph/bilm/kaggle/train_sup.py": {
+      "sha256": "c511bbbc95e46d57879c9504f32bb8732a793696decf3d943fce745d741c96b6",
+      "bytes": 14379
+    },
+    "data/manifest.json": {
+      "sha256": "c1632547b8d26246e4c47bf141bdbd510789abbd37fd6f8110db41cb1ea443f7",
+      "bytes": 1475
+    },
+    "data/train.jsonl": {
+      "sha256": "d815f2e35cdb7db4362c0ce7345cfdae2235249e9435d7b9c8cc5f98310dfffa",
+      "bytes": 87759792
+    },
+    "data/val.jsonl": {
+      "sha256": "1d089dbf5542882360402b3a7c34dc4fae35a4fc6d0ec418c4d4270940b3421c",
+      "bytes": 797337
+    },
+    "mntp-adapter/adapter_config.json": {
+      "sha256": "e219ed90f68dcf76999a56b0730bbfb87a1b8d3d3039328b961606e9faf6949b",
+      "bytes": 813
+    },
+    "mntp-adapter/adapter_model.safetensors": {
+      "sha256": "72729c2193aafc2c7a2ef0b2af00fc80406242be26e423e9ce998c8cf1632100",
+      "bytes": 35235088
+    }
+  }
+}

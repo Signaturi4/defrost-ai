@@ -1,11 +1,11 @@
 """Unit tests that need no model weights: parsing, links, retrieval policy, metrics, and a text-only build shape."""
 import numpy as np
 
-from kev_memory.evaluation.metrics import first_hit, ndcg_at_10, overlaps, paired_bootstrap
-from kev_memory.ingest.documents import split_sections
-from kev_memory.ingest.links import link_section, symbol_index
-from kev_memory.retrieval import policy
-from kev_memory.retrieval.keyword import fts_query
+from defrost_ai.evaluation.metrics import first_hit, ndcg_at_10, overlaps, paired_bootstrap
+from defrost_ai.ingest.documents import split_sections
+from defrost_ai.ingest.links import link_section, symbol_index
+from defrost_ai.retrieval import policy
+from defrost_ai.retrieval.keyword import fts_query
 
 
 def test_markdown_sections_keep_heading_path_and_lines():
@@ -75,7 +75,7 @@ def test_auto_k_sends_one_section_when_confident_else_more():
 
 
 def test_group_hits_counts_groups_found_in_top_k():
-    from kev_memory.evaluation.metrics import group_hits
+    from defrost_ai.evaluation.metrics import group_hits
     ranked = ["x", "a1", "y", "z", "q", "w", "b2"]
     assert group_hits(ranked, [{"a1", "a2"}, {"b1", "b2"}], 5) == 1
     assert group_hits(ranked, [{"a1", "a2"}, {"b1", "b2"}], 10) == 2
@@ -86,8 +86,8 @@ def test_rerank_cache_scores_only_new_pairs_and_keeps_order():
     import numpy as np
     import pytest
     pytest.importorskip("torch")                           # CI runs without torch: skipped there
-    from kev_memory.models.reranker import KevReranker
-    rr = KevReranker.__new__(KevReranker)                 # no weights: the model call is replaced below
+    from defrost_ai.models.reranker import DefrostReranker
+    rr = DefrostReranker.__new__(DefrostReranker)                 # no weights: the model call is replaced below
     rr.cache_size, rr._cache, calls = 3, OrderedDict(), []
     rr._score = lambda q, texts, batch_size=None: (calls.append(list(texts)), np.array([len(t) for t in texts], float))[1]
     assert list(rr.score("q", ["aa", "b"])) == [2, 1]
@@ -96,8 +96,8 @@ def test_rerank_cache_scores_only_new_pairs_and_keeps_order():
     assert len(rr._cache) == 3
 
 def test_config_files_link_and_secrets_are_skipped():
-    from kev_memory.config import SECRET_LIKE
-    from kev_memory.ingest.links import mentions
+    from defrost_ai.config import SECRET_LIKE
+    from defrost_ai.ingest.links import mentions
     found = mentions("CI runs `.github/workflows/deploy.yml`; cron is in deploy/crontab and deploy/crm.Dockerfile.")[0]
     assert {".github/workflows/deploy.yml", "deploy/crontab", "deploy/crm.Dockerfile"} <= found
     assert all(SECRET_LIKE.search(p) for p in [".kamal/secrets", "deploy/.env", "certs/api.key", "pnpm-lock.yaml"])
@@ -105,7 +105,7 @@ def test_config_files_link_and_secrets_are_skipped():
 
 
 def test_missing_names_flag_only_paths_and_calls():
-    from kev_memory.memory import PATH_OR_CALL
+    from defrost_ai.memory import PATH_OR_CALL
     assert PATH_OR_CALL.fullmatch("deploy/old_backup.sh") and PATH_OR_CALL.fullmatch("charge_invoice()")
     assert not PATH_OR_CALL.fullmatch("APP_DOMAIN") and not PATH_OR_CALL.fullmatch("SETUP.md")
 
@@ -134,7 +134,7 @@ def _graph():
 
 
 def _extracted(body, nodes, edges, core=None):
-    from kev_memory.ingest.links import symbol_index
+    from defrost_ai.ingest.links import symbol_index
     idx = symbol_index(nodes, edges)
     links, *_ = link_section(body, idx, {n["id"]: "c" for n in nodes}, "c", core)
     return [(n, m) for n, m, conf, _ in links if conf == "EXTRACTED"]
@@ -158,7 +158,7 @@ def test_methods_index_as_class_dot_method_and_dotted_fallback_is_checked():
 
 
 def test_core_paths_detection_and_display_order():
-    from kev_memory.ingest.links import core_paths
+    from defrost_ai.ingest.links import core_paths
     nodes, edges = _graph()
     assert core_paths({"components": []}, nodes) == ["c/backend/"]
     assert core_paths({"components": [{"name": "c", "core": ["frontend/app"]}]}, nodes) == ["c/frontend/app/"]
@@ -168,8 +168,8 @@ def test_core_paths_detection_and_display_order():
 
 def test_doc_trust_config_round_trip_and_rule_text(tmp_path):
     import json
-    from kev_memory import trust
-    from kev_memory.project_setup import install_memory_rule
+    from defrost_ai import trust
+    from defrost_ai.project_setup import install_memory_rule
     ws = tmp_path / "w.workspace.json"
     ws.write_text(json.dumps({"name": "w", "components": []}))
     assert trust.read(ws) == "low"                     # default: code is the truth
@@ -189,7 +189,7 @@ def test_doc_trust_config_round_trip_and_rule_text(tmp_path):
 
 
 def test_context_starts_with_the_doc_trust_line():
-    from kev_memory.memory import Memory
+    from defrost_ai.memory import Memory
     hit = {"rank": 1, "domain": "w", "path": "w/a.md", "lines": [1, 2], "heading": "a.md > A", "text": "text",
            "code": [], "doc_trust": "high"}
     ctx = Memory.context({"hits": [hit]})
@@ -197,9 +197,9 @@ def test_context_starts_with_the_doc_trust_line():
 
 
 def test_conflict_decisions_are_recorded_and_shown_on_matching_hits(tmp_path, monkeypatch):
-    from kev_memory import conflicts
-    from kev_memory.memory import Memory
-    monkeypatch.setenv("KEV_MEMORY_HOME", str(tmp_path))
+    from defrost_ai import conflicts
+    from defrost_ai.memory import Memory
+    monkeypatch.setenv("DEFROST_HOME", str(tmp_path))
     conflicts.record("crm", "docs/DEPLOY.md", "code", doc_says="CI runs kamal deploy", code_does="CI SSHes to the server",
                      code_ref=".github/workflows/deploy.yml:12", doc_lines=[10, 20], note="CI only triggers the server")
     assert conflicts.for_section(conflicts.load("crm"), "docs/DEPLOY.md", [15, 30])

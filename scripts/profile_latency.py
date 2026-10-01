@@ -1,7 +1,7 @@
 """Where does a search spend its time? Times every stage of one query separately (GPU synced), cold and warm.
 Latency only: no quality metrics.
 
-    KEV_MEMORY_MODELS=<weights> python scripts/profile_latency.py --memory ~/.kev-memory/parity-heldout \
+    DEFROST_MODELS=<weights> python scripts/profile_latency.py --memory ~/.defrost-ai/parity-heldout \
         --questions benchmarks/heldout/questions.jsonl --n 20
 -> prints a table; --out writes the raw timings as JSON."""
 from __future__ import annotations
@@ -18,9 +18,9 @@ import torch  # noqa: E402
 import transformers  # noqa: E402,F401
 IMPORT_S = time.perf_counter() - T0
 
-from kev_memory.memory import Memory, Models  # noqa: E402
-from kev_memory.models.weights import RETRIEVAL_INSTRUCTION  # noqa: E402
-from kev_memory.retrieval import keyword, policy  # noqa: E402
+from defrost_ai.memory import Memory, Models  # noqa: E402
+from defrost_ai.models.weights import RETRIEVAL_INSTRUCTION  # noqa: E402
+from defrost_ai.retrieval import keyword, policy  # noqa: E402
 
 
 def sync(dev):

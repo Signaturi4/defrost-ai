@@ -680,6 +680,59 @@ wheels = [
 ]
 
 [[package]]
+name = "defrost-ai"
+version = "1.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "peft" },
+    { name = "safetensors" },
+    { name = "torch" },
+    { name = "transformers" },
+]
+
+[package.optional-dependencies]
+code = [
+    { name = "graphifyy" },
+]
+dev = [
+    { name = "pytest" },
+]
+eval = [
+    { name = "langchain-community" },
+    { name = "ragas" },
+]
+mac = [
+    { name = "mlx", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
+    { name = "mlx-lm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
+]
+mcp = [
+    { name = "mcp" },
+]
+shepherd = [
+    { name = "shepherd-ai" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "graphifyy", marker = "extra == 'code'", specifier = "==0.4.32" },
+    { name = "langchain-community", marker = "extra == 'eval'", specifier = ">=0.3,<0.3.28" },
+    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.2,<2" },
+    { name = "mlx", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'mac'", specifier = ">=0.29" },
+    { name = "mlx-lm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'mac'", specifier = ">=0.28" },
+    { name = "numpy", specifier = ">=1.26" },
+    { name = "peft", specifier = ">=0.21" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
+    { name = "ragas", marker = "extra == 'eval'", specifier = "==0.4.3" },
+    { name = "safetensors", specifier = ">=0.4.3" },
+    { name = "shepherd-ai", marker = "extra == 'shepherd'" },
+    { name = "torch", specifier = ">=2.6" },
+    { name = "transformers", specifier = ">=5.17,<6" },
+]
+provides-extras = ["code", "mcp", "shepherd", "eval", "dev", "mac"]
+
+[[package]]
 name = "dill"
 version = "0.4.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1200,59 +1253,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/19/74/a633ee74eb36c44aa
 wheels = [
     { url = "https://files.pythonhosted.org/packages/41/45/1a4ed80516f02155c51f51e8cedb3c1902296743db0bbc66608a0db2814f/jsonschema_specifications-2025.9.1-py3-none-any.whl", hash = "sha256:98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe", size = 18437, upload-time = "2025-09-08T01:34:57.871Z" },
 ]
-
-[[package]]
-name = "kev-memory"
-version = "1.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
-    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "peft" },
-    { name = "safetensors" },
-    { name = "torch" },
-    { name = "transformers" },
-]
-
-[package.optional-dependencies]
-code = [
-    { name = "graphifyy" },
-]
-dev = [
-    { name = "pytest" },
-]
-eval = [
-    { name = "langchain-community" },
-    { name = "ragas" },
-]
-mac = [
-    { name = "mlx", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
-    { name = "mlx-lm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
-]
-mcp = [
-    { name = "mcp" },
-]
-shepherd = [
-    { name = "shepherd-ai" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "graphifyy", marker = "extra == 'code'", specifier = "==0.4.32" },
-    { name = "langchain-community", marker = "extra == 'eval'", specifier = ">=0.3,<0.3.28" },
-    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.2,<2" },
-    { name = "mlx", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'mac'", specifier = ">=0.29" },
-    { name = "mlx-lm", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'mac'", specifier = ">=0.28" },
-    { name = "numpy", specifier = ">=1.26" },
-    { name = "peft", specifier = ">=0.21" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
-    { name = "ragas", marker = "extra == 'eval'", specifier = "==0.4.3" },
-    { name = "safetensors", specifier = ">=0.4.3" },
-    { name = "shepherd-ai", marker = "extra == 'shepherd'" },
-    { name = "torch", specifier = ">=2.6" },
-    { name = "transformers", specifier = ">=5.17,<6" },
-]
-provides-extras = ["code", "mcp", "shepherd", "eval", "dev", "mac"]
 
 [[package]]
 name = "langchain"

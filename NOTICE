@@ -6,10 +6,10 @@ This product includes software derived from Letta Code
 Version 2.0 (see third_party/letta-code/LICENSE). The following files contain logic ported from Letta Code to Python,
 with changes described in each file's header:
 
-  kev_memory/context_constraints.py  from src/memory-frontmatter.ts, src/memory-constraints.ts,
+  defrost_ai/context_constraints.py  from src/memory-frontmatter.ts, src/memory-constraints.ts,
                                      src/agent/memory-constraints.ts
-  kev_memory/context_repo.py         from src/agent/memory-format.ts, src/agent/memory-git-hooks.ts,
+  defrost_ai/context_repo.py         from src/agent/memory-format.ts, src/agent/memory-git-hooks.ts,
                                      src/agent/memory-scanner.ts and the memory-maintenance skills
-  kev_memory/worktree.py             from src/agent/memory-worktree.ts, src/agent/memory-operation.ts,
+  defrost_ai/worktree.py             from src/agent/memory-worktree.ts, src/agent/memory-operation.ts,
                                      src/utils/worktree-lock.ts
-  kev_memory/compact_handoff.py      inspired by src/agent/reflection-runs.ts (no code copied)
+  defrost_ai/compact_handoff.py      inspired by src/agent/reflection-runs.ts (no code copied)

@@ -5,13 +5,13 @@ import sys
 
 import pytest
 
-from kev_memory import notes
-from kev_memory.ingest.documents import split_sections
+from defrost_ai import notes
+from defrost_ai.ingest.documents import split_sections
 
 
 @pytest.fixture
 def home(tmp_path, monkeypatch):
-    monkeypatch.setenv("KEV_MEMORY_HOME", str(tmp_path / "km"))
+    monkeypatch.setenv("DEFROST_HOME", str(tmp_path / "km"))
     repo = tmp_path / "repo"
     (repo / "src").mkdir(parents=True)
     (tmp_path / "km").mkdir()
@@ -28,8 +28,8 @@ def test_domain_for_finds_the_repo_domain(home):
 
 def test_handoff_note_is_sectioned_and_self_contained(home):
     f = notes.write_handoff("demo", "Make search under 3 s", "phase 2 done", ["bf16 for reranker only"],
-                            ["run health check"], ["kev_memory/models/reranker.py"], when=1_800_000_000)
-    from kev_memory.context_repo import parse
+                            ["run health check"], ["defrost_ai/models/reranker.py"], when=1_800_000_000)
+    from defrost_ai.context_repo import parse
     secs = split_sections(parse(f.read_text())[1], ".md")             # body after the name/description frontmatter
     names = [s[1][-1] for s in secs]
     assert names[:2] == ["Goal (Make search under 3 s)", "State of the work (Make search under 3 s)"]
@@ -72,9 +72,9 @@ def test_hook_install_is_idempotent_and_removable(home):
 def test_brief_cli_is_fast_and_model_free(home):
     tmp, repo = home
     notes.write_handoff("demo", "goal for cli", next_steps=["next"])
-    code = ("import sys; from kev_memory.cli import main; main(['brief']); "
+    code = ("import sys; from defrost_ai.cli import main; main(['brief']); "
             "print('torch' in sys.modules, 'transformers' in sys.modules)")
     r = subprocess.run([sys.executable, "-c", code], cwd=repo, capture_output=True, text=True,
-                       env={**__import__("os").environ, "KEV_MEMORY_HOME": str(tmp / "km")})
+                       env={**__import__("os").environ, "DEFROST_HOME": str(tmp / "km")})
     assert "goal for cli" in r.stdout
     assert r.stdout.strip().endswith("False False")
