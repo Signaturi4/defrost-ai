@@ -3,14 +3,20 @@ Agents, the MCP server and the graphify fork are thin clients of this service.
 
     defrost serve --port 8765
 
-    GET  /health                       {"ok": true}
+    GET  /health                       {"ok": true, "build", "install"}   (no token needed)
     GET  /domains                      registered domains with build status
     POST /search   {"query", "domains"?, "mode"?="accurate"|"fast" (default: config), "k"?=5 | "auto", "merge"?, "context"?=false}
     POST /update   {"domain"} | {"workspace", "domain"?}   -> {"job"}: rebuild in the background (incremental)
     GET  /jobs/<id>                    {"state": queued|running|done|failed, "log", "manifest"?}
     POST /rollback {"domain"}          swap back to the previous build
 
-Model calls are serialised with one lock (one GPU / MPS device); a build holds it while it encodes."""
+Every other request needs `Authorization: Bearer <token>` from <DEFROST_HOME>/service-<port>.json; see
+defrost_ai/service/auth.py for the Host / Origin / Content-Type rules.
+
+Locks: model calls (query embedding, reranking, section encoding) share one lock, because there is one GPU / MPS
+device. A build holds it only per encoding chunk, so searches run between chunks and during the CPU stages (code graph,
+sections, links). One build per domain at a time (a second update of the same domain waits). A build writes a staging
+directory and swaps it in; searches keep using the previous build until the swap, then reload it."""
 from __future__ import annotations
 
 import json
@@ -22,6 +28,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from defrost_ai import builder
+from defrost_ai.service import auth
 from defrost_ai.library import Library, read_registry, register
 from defrost_ai.memory import Memory
 
@@ -39,8 +46,14 @@ def _k(v):
 class Service:
     def __init__(self):
         self.library = Library()
-        self.gpu = threading.Lock()
+        self.gpu = threading.Lock()                          # model calls only (see module docstring)
         self.jobs: dict[str, dict] = {}
+        self._build_locks: dict[str, threading.Lock] = {}
+        self._build_locks_guard = threading.Lock()
+
+    def build_lock(self, key: str) -> threading.Lock:
+        with self._build_locks_guard:
+            return self._build_locks.setdefault(key, threading.Lock())
 
     def search(self, body: dict) -> dict:
         with self.gpu:
@@ -62,11 +75,13 @@ class Service:
         self.jobs[job["id"]] = job
 
         def run():
-            job["state"] = "running"
+            job["state"] = "waiting" if self.build_lock(domain or workspace).locked() else "running"
             try:
-                with self.gpu:
+                with self.build_lock(domain or workspace):
+                    job["state"] = "running"
                     job["manifest"] = {k: v for k, v in builder.build(workspace, self.library.models,
-                                                                       log=job["log"].append).items() if k != "doc_hashes"}
+                                                                       log=job["log"].append,
+                                                                       model_lock=self.gpu).items() if k != "doc_hashes"}
                 job["state"] = "done"
             except Exception:                                    # noqa: BLE001 - reported to the caller
                 job["state"], job["error"] = "failed", traceback.format_exc(limit=5)
@@ -76,10 +91,11 @@ class Service:
 
     def rollback(self, body: dict) -> dict:
         ws = read_registry()["domains"][body["domain"]]["workspace"]
-        return {"rolled_back": builder.rollback(ws)}
+        with self.build_lock(body["domain"]):
+            return {"rolled_back": builder.rollback(ws)}
 
 
-def make_handler(service: Service):
+def make_handler(service: Service, port: int = DEFAULT_PORT, token: str | None = None):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):
             pass
@@ -92,10 +108,18 @@ def make_handler(service: Service):
             self.end_headers()
             self.wfile.write(data)
 
+        def _denied(self, method: str) -> bool:
+            err = auth.check(method, self.path, self.headers, port, token)
+            if err:
+                self._send(err[0], {"error": err[1]})
+            return bool(err)
+
         def do_GET(self):
+            if self._denied("GET"):
+                return
             try:
                 if self.path == "/health":
-                    return self._send(200, {"ok": True, "build": BUILD})
+                    return self._send(200, {"ok": True, "build": BUILD, "install": auth.install_path()})
                 if self.path == "/domains":
                     return self._send(200, service.library.domains())
                 if self.path.startswith("/jobs/"):
@@ -106,9 +130,11 @@ def make_handler(service: Service):
                 self._send(500, {"error": str(e)})
 
         def do_POST(self):
+            if self._denied("POST"):
+                return
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
-                if self.path == "/shutdown":                    # local service only (binds 127.0.0.1)
+                if self.path == "/shutdown":
                     self._send(200, {"ok": True})
                     threading.Thread(target=self.server.shutdown, daemon=True).start()
                     return
@@ -151,6 +177,12 @@ def serve(port: int = DEFAULT_PORT, host: str = "127.0.0.1"):
     threading.Thread(target=_gc_merged, daemon=True).start()
     if os.environ.get("DEFROST_WARMUP", "1") != "0":
         threading.Thread(target=warm_up, args=(service,), daemon=True).start()
-    server = ThreadingHTTPServer((host, port), make_handler(service))
-    print(f"defrost service on http://{host}:{port}  (domains: {sorted(read_registry()['domains'])})", flush=True)
-    server.serve_forever()
+    token = auth.new_token()
+    server = ThreadingHTTPServer((host, port), make_handler(service, port, token))     # binds (fails if port taken)
+    auth.write_state(port, BUILD, token)
+    print(f"defrost service on http://{host}:{port}  (domains: {sorted(read_registry()['domains'])}; "
+          f"token in {auth.state_path(port)})", flush=True)
+    try:
+        server.serve_forever()
+    finally:
+        auth.clear_state(port, token)

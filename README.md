@@ -218,6 +218,17 @@ Slash commands:
 The MCP server is a thin stdio process with no ML dependencies. Searches go to one resident local service
 (`defrost serve`, started on first use), so the models load once for all clients.
 
+The service listens on 127.0.0.1 only and needs a token: on start it writes `~/.defrost-ai/service-<port>.json`
+(readable by you only), and the CLI, the MCP server and the graphify patch send it as `Authorization: Bearer`.
+Requests without it get 401; requests from a web page (an `Origin` other than localhost, or a `Host` other than
+127.0.0.1/localhost) get 403. `GET /health` needs no token. Rebuilding a domain does not stop searches: builds take
+a per-domain lock and share the model with searches in small chunks.
+
+There is one service per install. After an upgrade, the first call replaces a service that runs older code of the
+same install. A service started by another install (say a repo `.venv` next to the uv tool) is used as it is and
+never stopped. An MCP server started before the upgrade gets 401 until you restart Claude;
+`DEFROST_SERVICE_AUTH=0` on the service turns the token check off for that transition.
+
 ### Working memory: a git-backed context repository
 
 Handoff notes (`/handoff`, `remember(kind="note")`, `defrost note`) and your doc/code conflict decisions are stored

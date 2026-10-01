@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 from pathlib import Path
 
 from defrost_ai.config import Workspace
@@ -41,6 +42,13 @@ def register(name: str, workspace: str | Path, description: str = "") -> dict:
     return reg
 
 
+def _built_at(out: Path) -> str | None:
+    try:
+        return json.loads((out / "manifest.json").read_text()).get("built_at")
+    except (OSError, ValueError):
+        return None
+
+
 class Library:
     def __init__(self, models: Models | None = None):
         self.models = models or Models()
@@ -63,8 +71,17 @@ class Library:
             if name not in reg:
                 raise KeyError(f"unknown domain {name!r}; registered: {sorted(reg)}")
             out = Workspace.load(reg[name]["workspace"]).out
-            built_at = json.loads((out / "manifest.json").read_text()).get("built_at")
             cached = self._memories.get(name)
+            built_at = _built_at(out)
+            if built_at is None:                     # a build is swapping directories right now
+                if cached is not None:
+                    return cached                    # keep serving the previous build
+                for _ in range(40):                  # first load during a swap: wait for it (<= 2 s)
+                    time.sleep(0.05)
+                    if (built_at := _built_at(out)) is not None:
+                        break
+                else:
+                    raise FileNotFoundError(f"domain {name!r} has no build at {out}")
             if cached is None or cached.manifest.get("built_at") != built_at:     # reload after a rebuild
                 self._memories[name] = Memory(out, self.models, name)
             return self._memories[name]

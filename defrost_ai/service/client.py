@@ -23,29 +23,43 @@ URL = os.environ.get("DEFROST_URL") or _default_url()
 SERVE_CMD = os.environ.get("DEFROST_SERVE_CMD")        # e.g. "/path/.venv/bin/defrost serve"
 
 
+def _port() -> str:
+    return URL.rsplit(":", 1)[-1].split("/")[0]
+
+
+def _token() -> str | None:
+    from defrost_ai.service import auth
+    st = auth.read_state(_port())
+    return st.get("token") if st else None
+
+
 def _call(method: str, path: str, body: dict | None = None, timeout: float = 600):
+    headers = {"Content-Type": "application/json"}
+    if (token := _token()):
+        headers["Authorization"] = f"Bearer {token}"
     req = urllib.request.Request(URL + path, method=method, data=json.dumps(body).encode() if body is not None else None,
-                                 headers={"Content-Type": "application/json"})
+                                 headers=headers)
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read())
 
 
-def alive() -> bool:
+def _health() -> dict | None:
     try:
-        return _call("GET", "/health", timeout=2).get("ok", False)
-    except (urllib.error.URLError, OSError):
-        return False
-
-
-def _build() -> str | None:
-    try:
-        return _call("GET", "/health", timeout=2).get("build")
-    except (urllib.error.URLError, OSError):
+        return _call("GET", "/health", timeout=2)
+    except (urllib.error.URLError, OSError, ValueError):
         return None
 
 
+def alive() -> bool:
+    return bool((_health() or {}).get("ok"))
+
+
+def _build() -> str | None:
+    return (_health() or {}).get("build")
+
+
 def _stop_by_port(port: str) -> None:
-    """Terminate the local process listening on `port`, but only if it is a defrost service."""
+    """Terminate the local process listening on `port`, but only if its command line is a defrost service."""
     import signal
     try:
         pids = subprocess.run(["lsof", "-tiTCP:" + port, "-sTCP:LISTEN"], capture_output=True, text=True).stdout.split()
@@ -53,7 +67,7 @@ def _stop_by_port(port: str) -> None:
         return
     for pid in pids:
         cmd = subprocess.run(["ps", "-o", "command=", "-p", pid], capture_output=True, text=True).stdout
-        if "defrost" in cmd or "defrost_ai" in cmd:
+        if ("defrost" in cmd or "kev_memory" in cmd or "kev-memory" in cmd) and " serve" in cmd:
             os.kill(int(pid), signal.SIGTERM)
     t0 = time.time()
     while alive() and time.time() - t0 < 10:
@@ -61,27 +75,37 @@ def _stop_by_port(port: str) -> None:
 
 
 def ensure_service(wait: float = 120) -> None:
-    if alive():
-        from defrost_ai import build_id
-        if _build() == build_id() or os.environ.get("DEFROST_SERVE_CMD"):
-            return                                      # same code, or a service the user manages explicitly
-        try:                                            # upgraded package: restart the old service
+    """Make sure a service answers on URL, starting one if needed.
+
+    A running service is replaced only when it runs older code of THIS installation (same package path, different
+    build: an upgrade) or is a pre-1.2 service without the install field. A service started by another installation
+    (e.g. a repo .venv next to the uv tool) is left alone and used as it is, so two installs never keep restarting
+    each other's service. DEFROST_SERVE_CMD set = the user manages the service: never restarted."""
+    from defrost_ai import build_id
+    from defrost_ai.service import auth
+    health = _health()
+    if health and health.get("ok"):
+        same_code = health.get("build") == build_id()
+        other_install = health.get("install") not in (None, auth.install_path())
+        if same_code or other_install or os.environ.get("DEFROST_SERVE_CMD"):
+            return
+        try:                                            # our install, upgraded: restart the old service
             _call("POST", "/shutdown", {}, timeout=5)
         except (urllib.error.URLError, OSError):
             pass
         t0 = time.time()
         while alive() and time.time() - t0 < 10:
             time.sleep(0.5)
-        if alive():                                     # pre-1.1 service without /shutdown: stop it by pid
-            _stop_by_port(URL.rsplit(":", 1)[-1])
-    port = URL.rsplit(":", 1)[-1]
+        if alive():                                     # pre-1.2 service (no token file / no install): stop by pid
+            _stop_by_port(_port())
+    port = _port()
     home = os.path.expanduser(os.environ.get("DEFROST_HOME", "~/.defrost-ai"))
     log = open(os.path.join(home, "service.log"), "a") if os.path.isdir(home) else subprocess.DEVNULL
     cmd = shlex.split(SERVE_CMD) if SERVE_CMD else [sys.executable, "-m", "defrost_ai.cli", "serve"]
     subprocess.Popen(cmd + ["--port", port], stdout=log, stderr=log, start_new_session=True)
     t0 = time.time()
     while time.time() - t0 < wait:
-        if alive():
+        if alive() and _token():
             return
         time.sleep(1)
     raise RuntimeError(f"defrost service did not start on {URL}")
