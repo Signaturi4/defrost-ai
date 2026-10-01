@@ -1,0 +1,33 @@
+{
+    "model_name_or_path": "Qwen/Qwen2.5-0.5B",
+    "train_file": "/corpus_techdoc/corpus_mntp.txt",
+    "per_device_train_batch_size": 32,
+    "per_device_eval_batch_size": 32,
+    "gradient_accumulation_steps": 1,
+    "do_train": true,
+    "do_eval": true,
+    "max_seq_length": 512,
+    "mask_token_type": "blank",
+    "data_collator_type": "default",
+    "mlm_probability": 0.3,
+    "overwrite_output_dir": true,
+    "output_dir": "/runs/defrost_graph/techdoc-mntp",
+    "eval_steps": 100,
+    "save_steps": 200,
+    "stop_after_n_steps": 1000,
+    "lora_r": 16,
+    "gradient_checkpointing": true,
+    "torch_dtype": "bfloat16",
+    "attn_implementation": "sdpa",
+    "validation_file": "/corpus_techdoc/corpus_heldout.txt",
+    "eval_strategy": "steps",
+    "learning_rate": 5e-05,
+    "lr_scheduler_type": "warmup_stable_decay",
+    "warmup_steps": 50,
+    "lr_scheduler_kwargs": {
+        "num_stable_steps": 750,
+        "num_decay_steps": 200
+    },
+    "report_to": "none",
+    "eval_on_start": true
+}

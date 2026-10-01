@@ -4,13 +4,13 @@ Status (2026-10-02): steps 1–5 implemented and merged; step 6 not applied. Res
 
 ## 1. Where the time goes today
 
-Measured with `scripts/profile_latency.py` (Apple M5, macOS 27.2, torch 2.14 MPS, fp32, Kev-Rerank v2;
+Measured with `scripts/profile_latency.py` (Apple M5, macOS 27.2, torch 2.14 MPS, fp32, Defrost-Rerank v2;
 parity-heldout memory with 900 sections; 3 dev questions, `mode=rerank`). Raw: `results/private/latency/baseline_n3.json`.
 
 | stage (warm, per query) | median | share |
 |---|---|---|
 | BM25 (SQLite FTS5) | 1.6 ms | 0% |
-| query embedding (Kev-Ret-B, 45 tokens) | 95 ms | 1.3% |
+| query embedding (Defrost-Ret-B, 45 tokens) | 95 ms | 1.3% |
 | dense dot product + top-k | 0.2 ms | 0% |
 | SQLite section fetches | 0.8 ms | 0% |
 | reranker tokenize + copy | 42 ms | 0.6% |
@@ -75,10 +75,10 @@ Each step: implement → profile (20 queries) → parity → nDCG gate → keep 
 | step | change | latency target (rerank, warm) | gate |
 |---|---|---|---|
 | 0 | Baseline at n = 20 on heldout + books + general_crm; record dev nDCG for fp32 | today's 7.2 s | — |
-| 1 | Merged-weights cache (`~/.cache/kev-memory/merged/<weights-version>`), warm-up at service start | warm unchanged; cold ≤ 8 s | identical scores (max abs diff ≤ 1e-5) |
+| 1 | Merged-weights cache (`~/.cache/defrost-ai/merged/<weights-version>`), warm-up at service start | warm unchanged; cold ≤ 8 s | identical scores (max abs diff ≤ 1e-5) |
 | 2 | Length buckets + larger batches (fp32) | ≈ 5 s | identical rankings |
 | 3 | bf16 on MPS + NaN-safe pooling | ≈ 2.5–3 s | top-1 agreement ≥ 99% vs fp32; nDCG within ±0.005 |
-| 4 | MLX backend (bf16) for reranker and query encoder; auto-selected on macOS, `KEV_BACKEND=torch` to override | **≤ 1 s** | same as step 3, against the fp32 torch reference |
+| 4 | MLX backend (bf16) for reranker and query encoder; auto-selected on macOS, `DEFROST_BACKEND=torch` to override | **≤ 1 s** | same as step 3, against the fp32 torch reference |
 | 5 | Score cache + warm service; `fast` now pays at most the step-4 cost | repeated queries ~0 | none |
 | 6 | Optional lossy knobs, each measured alone: K = 30/25/20, 8-bit, max_doc 256 | step-4 time × 0.5–0.8 | nDCG paired-bootstrap CI includes 0 and the mean drop is ≤ 0.005; otherwise off |
 
@@ -91,7 +91,7 @@ read once, at the end.
 - **Reference:** fp32 PyTorch on CPU or MPS. Save the per-pair scores once per suite.
 - **Parity test** (cheap, every step): run 20 queries × ~37 pairs and compare scores, top-1 agreement and Kendall τ
   of each pool ranking.
-- **nDCG gate** (each step that changes numerics): `kev-memory benchmark` on the 4 dev suites, about 160 questions,
+- **nDCG gate** (each step that changes numerics): `defrost benchmark` on the 4 dev suites, about 160 questions,
   with a paired bootstrap against the reference. Local only, no Claude calls.
 
 ## 6. Risks
@@ -105,7 +105,7 @@ read once, at the end.
 
 ## 7. Results (steps 1–5)
 
-Latency, Apple M5, Kev-Rerank v2, warm (`scripts/health_check.py`, `scripts/profile_latency.py`):
+Latency, Apple M5, Defrost-Rerank v2, warm (`scripts/health_check.py`, `scripts/profile_latency.py`):
 
 | step | change | warm `rerank` query | cold model load |
 |---|---|---|---|
@@ -117,7 +117,7 @@ Latency, Apple M5, Kev-Rerank v2, warm (`scripts/health_check.py`, `scripts/prof
 | 5 | score cache | repeated query 38 ms | — |
 
 Through the resident service on general_crm: 1.2–1.8 s per search (agent run before: 10.6 s). The CLI
-`kev-memory search` now uses the service: 1.4 s per call after the first (before: 103–168 s, models reloaded per call).
+`defrost search` now uses the service: 1.4 s per call after the first (before: 103–168 s, models reloaded per call).
 
 Findings:
 - On MPS fp32, larger batches were slower; the gain of step 2 came from removing padding (flat for 512–2048 tokens).

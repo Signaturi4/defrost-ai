@@ -14,21 +14,21 @@
    "both": 0.03,
    "tokens": 1567.05
   },
-  "kev": {
+  "defrost": {
    "n": 100,
    "doc_hit": 0.94,
    "code_hit": 0.49,
    "both": 0.47,
    "tokens": 1412.95
   },
-  "kev+graph": {
+  "defrost+graph": {
    "n": 100,
    "doc_hit": 0.94,
    "code_hit": 0.8,
    "both": 0.76,
    "tokens": 2987.53
   },
-  "kev_section_hit@5": 0.92
+  "defrost_section_hit@5": 0.92
  },
  "behavior": {
   "graphify-ast": {
@@ -45,21 +45,21 @@
    "both": 0.0,
    "tokens": 1567.1132075471698
   },
-  "kev": {
+  "defrost": {
    "n": 53,
    "doc_hit": 0.9245283018867925,
    "code_hit": 0.39622641509433965,
    "both": 0.37735849056603776,
    "tokens": 1427.301886792453
   },
-  "kev+graph": {
+  "defrost+graph": {
    "n": 53,
    "doc_hit": 0.9245283018867925,
    "code_hit": 0.7924528301886793,
    "both": 0.7358490566037735,
    "tokens": 3001.8490566037735
   },
-  "kev_section_hit@5": 0.9245283018867925
+  "defrost_section_hit@5": 0.9245283018867925
  },
  "named": {
   "graphify-ast": {
@@ -76,20 +76,20 @@
    "both": 0.06382978723404255,
    "tokens": 1566.9787234042553
   },
-  "kev": {
+  "defrost": {
    "n": 47,
    "doc_hit": 0.9574468085106383,
    "code_hit": 0.5957446808510638,
    "both": 0.574468085106383,
    "tokens": 1396.7659574468084
   },
-  "kev+graph": {
+  "defrost+graph": {
    "n": 47,
    "doc_hit": 0.9574468085106383,
    "code_hit": 0.8085106382978723,
    "both": 0.7872340425531915,
    "tokens": 2971.3829787234044
   },
-  "kev_section_hit@5": 0.9148936170212766
+  "defrost_section_hit@5": 0.9148936170212766
  }
 }

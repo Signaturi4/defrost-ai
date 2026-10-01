@@ -1,0 +1,111 @@
+{
+ "config": {
+  "data": "/kaggle/input/datasets/artemzelenskii/defrost-rerank-v2/data",
+  "mntp": "/kaggle/input/datasets/artemzelenskii/defrost-rerank-v2/mntp-adapter",
+  "cgsa": "/kaggle/input/datasets/artemzelenskii/defrost-rerank-v2/cgsa-adapter",
+  "base": "Qwen/Qwen2.5-0.5B",
+  "out": "/kaggle/working/rerank-v2",
+  "steps": 800,
+  "groups": 16,
+  "lr": 3e-05,
+  "head_lr": 0.0003,
+  "warmup": 50,
+  "max_doc": 384,
+  "save_every": 200,
+  "eval_every": 200,
+  "seed": 42,
+  "init_from": "/kaggle/input/datasets/artemzelenskii/defrost-rerank-v2/init-rerank-v1",
+  "world": 2,
+  "dtype": "torch.float16"
+ },
+ "data_manifest": {
+  "n_train": 22464,
+  "train_by_source": {
+   "techdoc": 9683,
+   "hotpotqa": 1647,
+   "stackexchange": 2585,
+   "nq": 1599,
+   "msmarco": 4234,
+   "prose": 932,
+   "changelog": 617,
+   "quora": 583,
+   "allnli": 584
+  },
+  "n_val": 224,
+  "val_by_source": {
+   "prose": 64,
+   "techdoc": 96,
+   "changelog": 64
+  },
+  "new_negative_kinds": {
+   "sibling": 19074,
+   "changelog": 16639,
+   "doc": 3448,
+   "book": 5190
+  },
+  "false_negative_filtered": {
+   "techdoc": 5137,
+   "changelog": 2660,
+   "prose": 1106
+  },
+  "dropped_short": {
+   "changelog": 165,
+   "prose": 19
+  },
+  "leakage_dropped": {
+   "techdoc": 1,
+   "changelog": 3
+  },
+  "negatives": {
+   "techdoc": "<= 2 same-file siblings + <= 2 changelog/release-note sections (same project; one from any project if the project has none), BM25-ranked; rest v1 BM25",
+   "changelog": "positive = a changelog section; <= 2 other changelog sections + regular doc sections of the same project, BM25-ranked",
+   "prose": "<= 2 same-chapter siblings, rest BM25 over the same book",
+   "public": "v1 groups unchanged (replay)",
+   "false_negative_filter": "a new negative is dropped if its Defrost-Ret-B cosine to the query is >= 0.95 x the positive's (NV-Retriever TopK-PercPos)"
+  },
+  "books": {
+   "rust-book": {
+    "license": "MIT OR Apache-2.0",
+    "role": "train"
+   },
+   "rust-by-example": {
+    "license": "MIT OR Apache-2.0",
+    "role": "train"
+   },
+   "nomicon": {
+    "license": "MIT OR Apache-2.0",
+    "role": "train"
+   },
+   "python-guide": {
+    "license": "CC BY-NC-SA 3.0",
+    "role": "train"
+   },
+   "system-design-primer": {
+    "license": "CC BY 4.0",
+    "role": "train"
+   },
+   "mostly-adequate": {
+    "license": "CC BY-SA 4.0",
+    "role": "dev"
+   }
+  },
+  "gate": "13-gram overlap vs every eval suite question/answer and every section of the eval KBs (sup_data.eval_grams), applied to query, positive and each negative",
+  "sha256": {
+   "rerank_train": "bbae9be9c872ed9f957d7450f657f813d7922bb2f549cf51123812ba03cca528",
+   "rerank_val": "8ebf98c37e383c700bf03c651d281de6a35a04ebdd7f7ffc763f30265659df9c",
+   "rerank_val_v1": "c1b3724306a6eb4c866ca6b83ce9045bf773d63f9e717ed23d045e71d636e165"
+  }
+ },
+ "val": {
+  "step0": {
+   "v2_top1": 0.8795,
+   "v1_top1": 0.9336
+  },
+  "step800": {
+   "v2_top1": 0.9062,
+   "v2_mrr": 0.9509,
+   "v1_top1": 0.9375,
+   "v1_mrr": 0.9678
+  }
+ }
+}

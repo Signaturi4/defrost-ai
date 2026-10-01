@@ -1,6 +1,6 @@
 {
  "id": "<kaggle-user>/kev-rerank",
- "title": "kev-rerank",
+ "title": "defrost-rerank",
  "code_file": "rerank.ipynb",
  "language": "python",
  "kernel_type": "notebook",
@@ -9,7 +9,7 @@
  "enable_tpu": false,
  "enable_internet": true,
  "dataset_sources": [
-  "<kaggle-user>/kev-rerank-v1"
+  "<kaggle-user>/defrost-rerank-v1"
  ],
  "kernel_sources": [],
  "competition_sources": [],

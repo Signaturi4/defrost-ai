@@ -1,7 +1,7 @@
-"""E2E benchmark questions (graphify original vs graphify + kev-memory) on three repos never used in training.
+"""E2E benchmark questions (graphify original vs graphify + defrost) on three repos never used in training.
 
 Each question is PAIRED: a gold documentation section AND gold code symbol(s) that implement the behaviour.
-The generator picks the gold symbols from the component's full list of source symbols (not from kev-memory's
+The generator picks the gold symbols from the component's full list of source symbols (not from defrost's
 doc->code links), so the code gold does not favour our linker. Two styles:
   behavior  plain-words question, no identifiers (how developers ask when they don't know the API)
   named     the question names one identifier or config option and asks how it behaves / how to use it
@@ -21,9 +21,9 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 HERE = Path(__file__).parent
-MEM = Path.home() / ".kev-memory/e2e"
+MEM = Path.home() / ".defrost-ai/e2e"
 if not (MEM / "knowledge.sqlite").exists():
-    MEM = Path.home() / ".kev-memory/e2e.building"
+    MEM = Path.home() / ".defrost-ai/e2e.building"
 REPOS = HERE / "repos"
 PER_COMPONENT = 45
 SKIP = re.compile(r"(changelog|changes|contributing|code_of_conduct|license|security|authors|history|release)", re.I)

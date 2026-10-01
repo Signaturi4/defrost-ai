@@ -2,7 +2,7 @@
 
 Research summary (2026-10-01) on how to write documentation, by hand or with AI, so that:
 - people still read it as normal Markdown;
-- retrieval (BM25 + Kev-Ret-B + Kev-Rerank) finds the right section;
+- retrieval (BM25 + Defrost-Ret-B + Defrost-Rerank) finds the right section;
 - the key facts convert to graph triples cheaply, without an LLM pass over every refresh.
 
 No existing CLAUDE.md, AGENTS.md or skill in this workspace covers this. The closest local material is about
@@ -18,7 +18,7 @@ proposes how to measure them on our own stack.
 1. **Self-contained sections win.** Chunked text loses what "it", "this" and "the service" refer to (the
    "anaphoric reference problem"). Rewriting chunks so they name the entity improves retrieval and QA, most for
    small models and mean-pooled embedders ([arXiv 2507.07847](https://arxiv.org/pdf/2507.07847),
-   [CLAP, arXiv 2508.06941](https://arxiv.org/pdf/2508.06941)). Kev-Ret-B is a mean-pooled 0.5B embedder, so this
+   [CLAP, arXiv 2508.06941](https://arxiv.org/pdf/2508.06941)). Defrost-Ret-B is a mean-pooled 0.5B embedder, so this
    applies to us directly.
 2. **One meaning per term, one fact per sentence.** Simplified Technical English (ASD-STE100) uses one word per
    meaning, one instruction per sentence, at most 20–25 words per sentence, active voice, no dropped articles or
@@ -53,7 +53,7 @@ proposes how to measure them on our own stack.
 
 | pipeline step | what it uses | writing rule that helps |
 |---|---|---|
-| section splitter (`kev_memory/ingest/documents.py`) | Markdown / RST / AsciiDoc headings | one topic per heading; no giant sections; 60–400 words is the range the models were trained on |
+| section splitter (`defrost_ai/ingest/documents.py`) | Markdown / RST / AsciiDoc headings | one topic per heading; no giant sections; 60–400 words is the range the models were trained on |
 | retriever + reranker | `heading path + text` | descriptive headings ("Retry policy for failed webhooks", not "Notes"); name the entity in the first sentence |
 | doc→code linker (`ingest/links.py`) | backticked spans, file paths, camelCase / snake_case words resolved against graphify's AST | always backtick real identifiers exactly as in code (`charge_invoice()`, `src/billing/retry.py`) |
 | BM25 | literal words | use the user's words and the canonical term together once ("refund (reversal)") |

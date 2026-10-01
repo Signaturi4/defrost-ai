@@ -9,7 +9,7 @@
  "enable_tpu": false,
  "enable_internet": true,
  "dataset_sources": [
-  "artemzelenskii/kev-rerank-v2"
+  "artemzelenskii/defrost-rerank-v2"
  ],
  "kernel_sources": [],
  "competition_sources": [],
