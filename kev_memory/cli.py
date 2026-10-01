@@ -12,6 +12,7 @@
   kev-memory claude install [DIR] [--user]                               slash commands + `claude mcp add defrost`
   kev-memory domains                                                     list registered domains
   kev-memory search "question" [--domain D ...] [--mode fast] [-k 5] [--json]
+  kev-memory docs-for config/deploy.yml [...]                           doc sections to review after editing these files
   kev-memory serve [--port 8765]                                         resident HTTP service
   kev-memory benchmark --suite FILE.jsonl --memory DIR [--split dev]
   kev-memory verify-weights                                              check model files against MANIFEST.json"""
@@ -31,6 +32,8 @@ def main(argv=None):
     u = sub.add_parser("update"); u.add_argument("domain")
     r = sub.add_parser("rollback"); r.add_argument("domain")
     sub.add_parser("domains")
+    df = sub.add_parser("docs-for", help="doc sections that describe these code/config files (review after editing)")
+    df.add_argument("paths", nargs="+"); df.add_argument("--domain", action="append")
     s = sub.add_parser("search"); s.add_argument("query"); s.add_argument("--domain", action="append")
     s.add_argument("--mode", default="fast"); s.add_argument("-k", type=lambda v: v if v == "auto" else int(v), default=5,
                    help='number of sections, or "auto" (adaptive, 1-5)'); s.add_argument("--json", action="store_true")
@@ -78,6 +81,13 @@ def main(argv=None):
     elif a.cmd == "domains":
         from kev_memory.library import Library
         print(json.dumps(Library().domains(), indent=1))
+    elif a.cmd == "docs-for":
+        from kev_memory.library import Library
+        hits = Library().docs_for(a.paths, a.domain)
+        for h in hits:
+            print(f"{h['file']}: {h['domain']}:{h['path']}:L{h['lines'][0]}-{h['lines'][1]}  {h['heading']}")
+        if not hits:
+            print("no doc section links to these files")
     elif a.cmd == "search":
         from kev_memory.library import Library
         from kev_memory.memory import Memory

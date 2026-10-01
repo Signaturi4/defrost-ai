@@ -37,6 +37,20 @@ def _load_cache(path: Path) -> dict[str, np.ndarray]:
     return dict(zip(c["keys"], c["vecs"]))
 
 
+def file_times(ws: Workspace, nodes: list[dict]) -> dict[str, int]:
+    """{display path: last commit unix time} for every file a code or config node lives in (one git log per root)."""
+    out = {}
+    for comp in ws.components:
+        for root in comp.roots:
+            prefix = comp.display_path(root, root / "_")[:-1]
+            paths = {n["source_file"]: root / n["source_file"][len(prefix):] for n in nodes
+                     if n.get("component") == comp.name and (n.get("source_file") or "").startswith(prefix)}
+            paths = {k: v for k, v in paths.items() if v.exists()}
+            times = git_times(root, list(paths.values())) if paths else {}
+            out.update({k: times[v] for k, v in paths.items() if v in times})
+    return out
+
+
 def build(workspace: str | Path, models=None, log=print) -> dict:
     ws = Workspace.load(workspace)
     out = ws.out
@@ -52,6 +66,7 @@ def build(workspace: str | Path, models=None, log=print) -> dict:
 
     log(f"[1/4] code graph ({ws.name})")
     code = build_code_graph(ws, cache_root / "graphify", log)
+    code["file_times"] = file_times(ws, code["nodes"])          # last commit per code/config file: staleness check
     (stage / store.CODE_GRAPH).write_text(json.dumps(code))
     idx = symbol_index(code["nodes"])
     component_of = {n["id"]: n["component"] for n in code["nodes"]}

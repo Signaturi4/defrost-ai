@@ -9,7 +9,8 @@ from collections import defaultdict
 from pathlib import Path
 
 BACKTICK = re.compile(r"`([^`\n]{2,120})`")
-PATHLIKE = re.compile(r"(?<![\w/.-])((?:[\w.-]+/)*[\w.-]+\.(?:py|ts|tsx|js|jsx|tf|swift|kt|go|ya?ml|json|sh|sql))\b")
+PATHLIKE = re.compile(r"(?<![\w/.-])((?:[\w.-]+/)*(?:[\w.-]+\.(?:py|ts|tsx|js|jsx|mjs|tf|swift|kt|go|ya?ml|json|sh|sql|toml"
+                      r"|ini|cfg|conf|Dockerfile|dockerfile)|(?:[\w.-]+/)*(?:Dockerfile|Makefile|Procfile|crontab|Caddyfile)))\b")
 CODEWORD = re.compile(r"\b([a-z]+[A-Z][A-Za-z0-9]+|[A-Z][a-z0-9]+[A-Z][A-Za-z0-9]+|[a-z][a-z0-9]*_[a-z0-9_]{2,}"
                       r"|(?:var|module|data|aws_[a-z0-9_]+)\.[A-Za-z0-9_.-]+)\b")
 CODE_SHAPED = re.compile(r"[()_./]|[a-z][A-Z]|^[A-Z][a-z]+[A-Z]")

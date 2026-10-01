@@ -251,10 +251,19 @@ RULE_START, RULE_END = "<!-- defrost-ai:memory:start -->", "<!-- defrost-ai:memo
 def install_memory_rule(root: Path, name: str) -> str:
     f = root / "CLAUDE.md"
     text = f.read_text() if f.exists() else ""
-    block = (f"{RULE_START}\n## Project memory (defrost-ai)\n"
-             f"For \"how do I / why does / what happens when\" questions, call `memory_search` (MCP server `defrost`, "
-             f"domain `{name}`) before reading files, and cite the returned `path:Lstart-end`. Use file reads and grep "
-             f"for exact code.\n{RULE_END}")
+    block = f"""{RULE_START}
+## Project memory (defrost-ai)
+- **Answer:** for "how do I / why does / what happens when" questions, call `memory_search` (MCP server `defrost`,
+  domain `{name}`) first, and cite `path:Lstart-end`. Use grep for exact code.
+- **Ground:** the memory returns docs, and docs go stale. Before stating how something behaves (config, deploy, CI,
+  defaults, limits), read the files on the hit's `verify in:` line. A line starting with `!` marks a doc/code conflict
+  (file changed after the doc, or names the code no longer has): read the code, trust it, and tell the user which
+  doc section is wrong under a **Doc/code conflicts** heading.
+- **Keep docs current, on every change:** (1) before finishing, call `memory_docs_for` with the files you changed;
+  (2) update those sections in the same change (rules: `docs/DOC_RULES.md` if present); (3) a new feature, command,
+  env var or config key gets a section; (4) fix any doc/code conflict you found, or list it in your final message.
+  The memory refreshes itself after commits to main; otherwise run `/memory-update`.
+{RULE_END}"""
     text = re.sub(rf"\n*{re.escape(RULE_START)}.*?{re.escape(RULE_END)}\n*", "\n", text, flags=re.S).rstrip()
     i = text.find("<!-- defrost-ai:doc-rules:start -->")              # keep the doc-rules block last
     text = (text[:i].rstrip() + "\n\n" + block + "\n\n" + text[i:] if i >= 0

@@ -79,3 +79,18 @@ def test_group_hits_counts_groups_found_in_top_k():
     ranked = ["x", "a1", "y", "z", "q", "w", "b2"]
     assert group_hits(ranked, [{"a1", "a2"}, {"b1", "b2"}], 5) == 1
     assert group_hits(ranked, [{"a1", "a2"}, {"b1", "b2"}], 10) == 2
+
+
+def test_config_files_link_and_secrets_are_skipped():
+    from kev_memory.config import SECRET_LIKE
+    from kev_memory.ingest.links import mentions
+    found = mentions("CI runs `.github/workflows/deploy.yml`; cron is in deploy/crontab and deploy/crm.Dockerfile.")[0]
+    assert {".github/workflows/deploy.yml", "deploy/crontab", "deploy/crm.Dockerfile"} <= found
+    assert all(SECRET_LIKE.search(p) for p in [".kamal/secrets", "deploy/.env", "certs/api.key", "pnpm-lock.yaml"])
+    assert not any(SECRET_LIKE.search(p) for p in ["config/deploy.yml", "deploy/.env.example", "deploy/backup.sh"])
+
+
+def test_missing_names_flag_only_paths_and_calls():
+    from kev_memory.memory import PATH_OR_CALL
+    assert PATH_OR_CALL.fullmatch("deploy/old_backup.sh") and PATH_OR_CALL.fullmatch("charge_invoice()")
+    assert not PATH_OR_CALL.fullmatch("APP_DOMAIN") and not PATH_OR_CALL.fullmatch("SETUP.md")

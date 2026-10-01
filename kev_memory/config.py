@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -21,6 +22,14 @@ SKIP_DIRS = {".git", "node_modules", ".history", "graphify-out", ".terraform", "
 DOC_SUFFIXES = {".md", ".mdx", ".rst", ".asc", ".adoc"}
 CODE_SUFFIXES = {".py", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".java", ".kt", ".kts", ".swift", ".go", ".rs",
                  ".rb", ".php", ".cs", ".scala", ".c", ".h", ".cpp", ".hpp", ".m", ".dart", ".lua"}
+# Config / CI / infra files: indexed as file nodes (not split into sections), so docs that mention them link to them
+# and answers can be checked against them. Secret-like files and lockfiles are never listed.
+CONFIG_SUFFIXES = {".yml", ".yaml", ".toml", ".ini", ".cfg", ".conf", ".sh", ".bash", ".sql", ".dockerfile", ".tf",
+                   ".hcl", ".nix", ".service", ".timer"}
+CONFIG_NAMES = {"Dockerfile", "Containerfile", "Makefile", "Procfile", "crontab", "Caddyfile", "Justfile", "Vagrantfile",
+                "nginx.conf", ".env.example", ".env.sample"}
+SECRET_LIKE = re.compile(r"secret|credential|passw|token|private|\.pem$|\.key$|\.p12$|id_rsa|id_ed25519|"
+                         r"(^|/)\.env($|\.(?!example$|sample$))|lock\.ya?ml$|-lock\.|\.lock$", re.I)
 ICLOUD_PLACEHOLDER = 0x40000000   # macOS SF_DATALESS: file content not on disk; reading it would block on a download
 
 
@@ -57,7 +66,7 @@ class Component:
         roots = [Path(os.path.expanduser(p)).resolve() for p in spec.get("paths", [spec.get("path")]) if p]
         return cls(spec["name"], roots, set(spec.get("exclude", [])), spec.get("role", ""), spec.get("text_only", False))
 
-    def files(self, suffixes: set[str]):
+    def files(self, suffixes: set[str], names: set[str] = frozenset()):
         """Yield (root, path) for files with one of `suffixes`, skipping SKIP_DIRS, hidden dirs and excludes.
         Inside a git work tree the list comes from `git ls-files` (tracked + untracked, minus .gitignore), so ignored
         data, secrets and dependency copies are never indexed; elsewhere the directory is walked."""
@@ -73,7 +82,7 @@ class Component:
                         or any("/".join(parts[:i + 1]) in self.exclude for i in range(len(parts))) \
                         or rel.as_posix() in self.exclude or rel.name in self.exclude:
                     continue
-                if path.suffix.lower() not in suffixes or not path.is_file():
+                if (path.suffix.lower() not in suffixes and path.name not in names) or not path.is_file():
                     continue
                 if getattr(os.stat(path), "st_flags", 0) & ICLOUD_PLACEHOLDER:
                     if path not in self.skipped:
