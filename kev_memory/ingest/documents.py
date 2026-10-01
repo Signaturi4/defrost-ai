@@ -59,6 +59,10 @@ def split_sections(text: str, suffix: str = ".md", max_words: int = MAX_WORDS):
     elif suffix in (".asc", ".adoc"):
         text = asciidoc_to_markdown_headings(text)
     lines = text.splitlines()
+    if lines and lines[0].strip() == "---":                 # YAML frontmatter is metadata, not a section: blank it
+        end = next((i for i in range(1, min(len(lines), 60)) if lines[i].strip() in ("---", "...")), None)
+        if end:
+            lines[:end + 1] = [""] * (end + 1)              # (blank, not removed: line numbers stay exact)
     out, stack, cur, start, fenced = [], [], [], 1, False
 
     def flush(end):

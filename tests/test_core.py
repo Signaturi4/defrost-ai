@@ -211,3 +211,9 @@ def test_conflict_decisions_are_recorded_and_shown_on_matching_hits(tmp_path, mo
     import pytest
     with pytest.raises(ValueError):
         conflicts.record("crm", "docs/DEPLOY.md", "agent-guess")
+
+
+def test_yaml_frontmatter_is_not_indexed_and_line_numbers_stay_exact():
+    md = "---\nname: Deploy\ndescription: how we deploy\n---\n# Deploy\nrun kamal\n"
+    secs = split_sections(md, ".md")
+    assert [(s[1], s[2], s[4]) for s in secs] == [(["Deploy"], 5, "# Deploy\nrun kamal")]

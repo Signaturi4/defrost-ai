@@ -7,7 +7,7 @@ current. The graph is for navigation; the answer always comes from a doc section
 
 Rendered copies for slides and the README: architecture ([svg](img/agent_loop-1.svg), [png](img/agent_loop-1.png)), loop ([svg](img/agent_loop-2.svg), [png](img/agent_loop-2.png)).
 
-The context repo, its worktree workers and the PreCompact handoff are on branch `feature/context-repo` (not merged yet); the conflict step (human in the loop) is on `main`.
+Everything in both diagrams is on `main`: the conflict step (human in the loop), the git-backed context repo, its worktree workers and the PreCompact handoff (opt-in: `kev-memory setup --handoff-on-compact`).
 
 ## 1. Where the system sits
 
