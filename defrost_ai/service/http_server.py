@@ -5,7 +5,7 @@ Agents, the MCP server and the graphify fork are thin clients of this service.
 
     GET  /health                       {"ok": true}
     GET  /domains                      registered domains with build status
-    POST /search   {"query", "domains"?, "mode"?="fast", "k"?=5 | "auto", "merge"?="rerank", "context"?=false}
+    POST /search   {"query", "domains"?, "mode"?="accurate"|"fast" (default: config), "k"?=5 | "auto", "merge"?, "context"?=false}
     POST /update   {"domain"} | {"workspace", "domain"?}   -> {"job"}: rebuild in the background (incremental)
     GET  /jobs/<id>                    {"state": queued|running|done|failed, "log", "manifest"?}
     POST /rollback {"domain"}          swap back to the previous build
@@ -44,8 +44,8 @@ class Service:
 
     def search(self, body: dict) -> dict:
         with self.gpu:
-            res = self.library.search(body["query"], body.get("domains"), body.get("mode", "fast"), _k(body.get("k", 5)),
-                                      body.get("merge", "rerank"))
+            res = self.library.search(body["query"], body.get("domains"), body.get("mode"), _k(body.get("k", 5)),
+                                      body.get("merge"))
         if body.get("context"):
             res["context"] = Memory.context(res, int(body.get("budget_tokens", 2000)))
         return res

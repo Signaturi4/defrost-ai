@@ -104,7 +104,7 @@ index 0000000..b8c8751
 +    graphify memory init [PATH] [--domain NAME]     create a workspace for a repo/folder and build its memory
 +    graphify memory build WORKSPACE.json --domain NAME
 +    graphify memory update DOMAIN [--wait]          rebuild after changes (incremental; new/edited sections only)
-+    graphify memory search "question" [--domain D]... [--mode fast|rerank|...] [-k 5|auto] [--json]
++    graphify memory search "question" [--domain D]... [--mode accurate|fast|...] [-k 5|auto] [--json]
 +    graphify memory domains | status
 +    graphify memory rollback DOMAIN                 restore the previous build
 +
@@ -128,7 +128,7 @@ index 0000000..b8c8751
 +URL = os.environ.get("DEFROST_URL", "http://127.0.0.1:8765")
 +SERVE_CMD = os.environ.get("DEFROST_SERVE_CMD", "defrost serve")
 +HOME = Path(os.environ.get("DEFROST_HOME", "~/.defrost-ai")).expanduser()
-+MODES = ["fast", "rerank", "hybrid", "dense", "bm25", "all"]
++MODES = ["accurate", "fast", "rerank", "hybrid", "dense", "bm25", "all"]
 +
 +
 +# ---- service client ------------------------------------------------------------------------------------------------
@@ -167,7 +167,7 @@ index 0000000..b8c8751
 +DEFAULT_DOMAINS = [d for d in os.environ.get("DEFROST_DOMAINS", "").split(",") if d]
 +
 +
-+def search(query: str, domains=None, mode: str = "fast", k: int | str = 5) -> dict:
++def search(query: str, domains=None, mode: str = "accurate", k: int | str = 5) -> dict:
 +    """domains: None -> DEFROST_DOMAINS (comma-separated) if set, else every registered domain."""
 +    ensure_service()
 +    domains = domains or DEFAULT_DOMAINS or None
@@ -236,12 +236,12 @@ index 0000000..b8c8751
 +MCP_TOOLS = [
 +    {"name": "memory_search",
 +     "description": "Search the knowledge memory: documentation sections of every registered domain, each with the "
-+                    "code it names, cited as domain:path:Lstart-end. mode: fast (default), rerank (most accurate), "
++                    "code it names, cited as domain:path:Lstart-end. mode: accurate (default), fast (no reranker), "
 +                    "dense (paraphrased how/why), bm25 (exact identifiers, error strings).",
 +     "inputSchema": {"type": "object", "properties": {
 +         "query": {"type": "string"},
 +         "domains": {"type": "array", "items": {"type": "string"}},
-+         "mode": {"type": "string", "enum": MODES, "default": "fast"},
++         "mode": {"type": "string", "enum": MODES, "default": "accurate"},
 +         "k": {"type": ["integer", "string"], "default": 5,
 +               "description": "number of sections, or \"auto\": 1-5 from the retriever's calibrated confidence"}},
 +         "required": ["query"]}},
@@ -259,7 +259,7 @@ index 0000000..b8c8751
 +
 +def mcp_call(name: str, args: dict) -> str:
 +    if name == "memory_search":
-+        res = search(args["query"], args.get("domains"), args.get("mode", "fast"), _k(args.get("k", 5)))
++        res = search(args["query"], args.get("domains"), args.get("mode", "accurate"), _k(args.get("k", 5)))
 +        return f"mode {res['mode']} -> {res['mode_used']}\n\n{res.get('context') or 'no results'}"
 +    if name == "memory_domains":
 +        return json.dumps(domains(), indent=1)
@@ -293,7 +293,7 @@ index 0000000..b8c8751
 +    b.add_argument("--description", default="")
 +    u = sub.add_parser("update"); u.add_argument("domain"); u.add_argument("--no-wait", action="store_true")
 +    s = sub.add_parser("search"); s.add_argument("query"); s.add_argument("--domain", action="append")
-+    s.add_argument("--mode", default="fast", choices=MODES); s.add_argument("-k", type=_k, default=5)
++    s.add_argument("--mode", default="accurate", choices=MODES); s.add_argument("-k", type=_k, default=5)
 +    s.add_argument("--json", action="store_true")
 +    sub.add_parser("domains"); sub.add_parser("status")
 +    r = sub.add_parser("rollback"); r.add_argument("domain")

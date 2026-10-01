@@ -1,5 +1,9 @@
 # Evaluation
 
+> [!NOTE]
+> Mode names: since 1.2 the `fast` policy in this file is called `accurate` (the default), and `fast` means
+> `hybrid` (no reranker).
+
 ## Question
 
 Does the shipped stack retrieve better documentation than a plain SQLite FTS5 (BM25) index of the same heading

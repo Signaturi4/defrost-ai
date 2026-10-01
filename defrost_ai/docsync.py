@@ -182,10 +182,22 @@ def _last_commit_ts(root: Path, path: str) -> int:
     return int(out) if out else 0
 
 
+def _excluded(rel: str, domain: str | None) -> bool:
+    """Paths the memory does not index (workspace excludes: the doc-rules kit, defrost-memory/) are not doc work."""
+    if not domain:
+        return False
+    try:
+        ws = json.loads((notes.home() / f"{domain}.workspace.json").read_text())
+    except (OSError, ValueError):
+        return False
+    ex = [e.rstrip("/") for c in ws.get("components", []) for e in c.get("exclude", [])]
+    return any(rel == e or rel.startswith(e + "/") for e in ex)
+
+
 def plan(path: str | Path = ".", staged: bool = False, commit: str | None = None, domain: str | None = None) -> dict:
     root = notes.git_root(Path(path))
     name = domain or notes.domain_for(root)
-    ch = changes(root, staged, commit)
+    ch = {p: d for p, d in changes(root, staged, commit).items() if not _excluded(p, name)}   # same files as the index
     docs_edited = sorted(p for p in ch if is_doc(p))
     code = {p: d for p, d in ch.items() if is_code(p) and d["status"] != "D"}
     deleted = sorted(p for p, d in ch.items() if is_code(p) and d["status"] == "D")
@@ -297,7 +309,7 @@ COMMIT = re.compile(r"(^|[;&|]\s*|\s)git\s+(-C\s+\S+\s+)?commit\b")
 INSTRUCTION = ("Follow the /document-changes procedure: update those sections in place and add sections for new "
                "user- or operator-facing code, following docs/DOC_RULES.md (one topic per section, exact backticked "
                "names, Facts lines), then run `python docs/tools/doc_lint.py <changed docs>`. If a listed section is "
-               "not affected, leave it. Then call memory_handoff with what you documented.")
+               "not affected, leave it. Then call remember(kind='note') with what you documented.")
 
 
 def _state(domain: str, kind: str) -> Path:
@@ -391,12 +403,15 @@ def auto_command(sha: str, budget_usd: float = 0.5) -> list[str]:
     return ["claude", "-p", f"/document-changes {sha}", "--permission-mode", "acceptEdits",
             "--allowedTools", "Read,Grep,Glob,Edit,Write,Bash(python docs/tools/doc_lint.py:*),"
             "Bash(defrost docs-plan:*),Bash(git show:*),Bash(git diff:*),Bash(git log:*),"
-            "mcp__defrost__memory_search,mcp__defrost__memory_handoff",
+            "mcp__defrost__search,mcp__defrost__remember",
             "--max-budget-usd", str(budget_usd)]
 
 
-def install_hooks(root: Path, auto: bool = False, budget_usd: float = 0.5, auto_merge: bool = False) -> list[str]:
-    """Project .claude/settings.json (Stop + PreToolUse on Bash + SessionStart pending) and git post-commit."""
+def install_hooks(root: Path, auto: bool = False, budget_usd: float = 0.5, auto_merge: bool = False,
+                  gate: bool = True) -> list[str]:
+    """Project .claude/settings.json and git post-commit. Always: post-commit records a doc follow-up, SessionStart
+    lists pending ones. gate=True also adds Stop (remind once per change) and PreToolUse (hold the agent's
+    `git commit` once until docs are updated)."""
     import shlex
     import shutil
     exe = shutil.which("defrost") or "defrost"
@@ -404,19 +419,24 @@ def install_hooks(root: Path, auto: bool = False, budget_usd: float = 0.5, auto_
     f.parent.mkdir(parents=True, exist_ok=True)
     settings = json.loads(f.read_text()) if f.exists() and f.read_text().strip() else {}
     hooks = settings.setdefault("hooks", {})
-    want = {"Stop": {"hooks": [{"type": "command", "command": f"{exe} docs-hook stop  # {DOCS_TAG}"}]},
-            "PreToolUse": {"matcher": "Bash", "hooks": [{"type": "command",
-                                                         "command": f"{exe} docs-hook commit  # {DOCS_TAG}"}]},
-            "SessionStart": {"matcher": "startup|resume",
-                             "hooks": [{"type": "command", "command": f"{exe} docs-pending  # {DOCS_TAG}"}]}}
+    want = {"SessionStart": {"matcher": "startup|resume",
+                             "hooks": [{"type": "command", "command": f"{exe} hook pending  # {DOCS_TAG}"}]}}
+    if gate:
+        want |= {"Stop": {"hooks": [{"type": "command", "command": f"{exe} hook stop  # {DOCS_TAG}"}]},
+                 "PreToolUse": {"matcher": "Bash", "hooks": [{"type": "command",
+                                                              "command": f"{exe} hook commit  # {DOCS_TAG}"}]}}
+    for event in ("Stop", "PreToolUse", "SessionStart"):                  # re-running setup replaces our entries
+        hooks[event] = [h for h in hooks.get(event, []) if DOCS_TAG not in json.dumps(h)]
+        if not hooks[event]:
+            hooks.pop(event)
     for event, entry in want.items():
-        hooks[event] = [h for h in hooks.get(event, []) if DOCS_TAG not in json.dumps(h)] + [entry]
+        hooks[event] = hooks.get(event, []) + [entry]
     f.write_text(json.dumps(settings, indent=2) + "\n")
     hdir = Path(git(root, "rev-parse", "--git-path", "hooks").strip() or ".git/hooks")
     hdir = hdir if hdir.is_absolute() else root / hdir
     hdir.mkdir(parents=True, exist_ok=True)
     log = shlex.quote(str(notes.home() / "docsync.log"))
-    run = f"{exe} docs-record HEAD >> {log} 2>&1"
+    run = f"{exe} hook post-commit >> {log} 2>&1"
     if auto:                                       # not inside Claude Code: its own commits are gated by PreToolUse
         merge = " --merge" if auto_merge else ""             # default: leave defrost/docs/<sha> for review
         run += (f'\n  if [ -z "$CLAUDECODE" ]; then ( {exe} docs-auto HEAD --budget {budget_usd}{merge} >> {log} 2>&1 & ); fi')

@@ -32,5 +32,5 @@ cat <<'EOF'
 Done. In any repository:
   claude            then type   /defrost-setup
 It asks how the memory should stay fresh (default: build now + on every merge/commit to main),
-builds it, and from then on Claude uses memory_search for how/why questions.
+builds it, and from then on Claude uses the memory (search tool) for how/why questions.
 EOF

@@ -63,9 +63,9 @@ def locked(t):
     rows = [("Held-out OSS repos\n(106 questions)", (0.703, None, None), (0.840, None, None)),
             ("Private product repos\n(69, in-domain)", (0.684, None, None), (0.835, None, None))]
     fig, ax = plt.subplots(figsize=(8.6, 2.5), facecolor=t["bg"]); ax.set_facecolor(t["bg"])
-    bars(ax, t, rows, "BM25", "defrost-ai (fast)", fmt="{:.3f}")
+    bars(ax, t, rows, "BM25", "defrost-ai (accurate)", fmt="{:.3f}")
     fig.text(0.02, 0.92, "Locked test, nDCG@10 (scored once)", fontsize=12.5, fontweight="semibold", color=t["ink"])
-    fig.text(0.02, 0.82, "fast vs BM25: +0.111 and +0.130, both 95% CIs above zero.", fontsize=9.5, color=t["muted"])
+    fig.text(0.02, 0.82, "accurate vs BM25: +0.111 and +0.130, both 95% CIs above zero.", fontsize=9.5, color=t["muted"])
     fig.subplots_adjust(left=0.27, right=0.99, top=0.72, bottom=0.04)
     return fig
 

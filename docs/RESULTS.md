@@ -1,5 +1,9 @@
 # Results: everything we measured, in one place
 
+> [!NOTE]
+> Mode names: since 1.2 the `fast` policy in this file is called `accurate` (the default), and `fast` means
+> `hybrid` (no reranker).
+
 This file pulls together every notable measurement of the defrost stack: Defrost-Ret-B retriever + Defrost-Rerank
 cross-encoder + `fast` routing policy, on top of a BM25 section index and graphify's AST code graph. It is the
 single place to answer: *does it work, where, by how much, and where does it fail?*

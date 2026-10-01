@@ -11,7 +11,15 @@ import time
 import urllib.error
 import urllib.request
 
-URL = os.environ.get("DEFROST_URL", "http://127.0.0.1:8765")
+def _default_url() -> str:
+    try:
+        from defrost_ai import settings
+        return f"http://127.0.0.1:{settings.get('service.port')}"
+    except Exception:                                   # noqa: BLE001
+        return "http://127.0.0.1:8765"
+
+
+URL = os.environ.get("DEFROST_URL") or _default_url()
 SERVE_CMD = os.environ.get("DEFROST_SERVE_CMD")        # e.g. "/path/.venv/bin/defrost serve"
 
 
@@ -79,7 +87,8 @@ def ensure_service(wait: float = 120) -> None:
     raise RuntimeError(f"defrost service did not start on {URL}")
 
 
-def search(query: str, domains=None, mode: str = "fast", k: int = 5, context: bool = True, merge: str = "rerank"):
+def search(query: str, domains=None, mode: str | None = None, k: int | str = 5, context: bool = True,
+           merge: str | None = None):
     ensure_service()
     return _call("POST", "/search", {"query": query, "domains": domains, "mode": mode, "k": k, "context": context,
                                      "merge": merge})

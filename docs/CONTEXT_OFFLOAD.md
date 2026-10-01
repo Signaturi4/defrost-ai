@@ -30,28 +30,29 @@ makes `/clear` safe: the state goes into a note first, and the hook brings back 
 ## Design
 
 ```
- long session ──/handoff──► memory_handoff(goal, state, decisions, next_steps, files)
-                              │ writes ~/.defrost-ai/<domain>-notes/notes/<time>-<slug>.md
-                              │ indexes it incrementally as domain "<domain>-notes"
-              ──/clear────► SessionStart hook (matcher clear|compact): `defrost brief`
+ long session ──/handoff──► remember(kind="note", goal, state, decisions, next_steps, files)
+                              │ writes <project>/defrost-memory/notes/<time>-<slug>.md (one git commit)
+                              │ indexes it incrementally as domain "<domain>-context"
+              ──/clear────► SessionStart hook (matcher clear|compact): `defrost hook brief`
                               │ prints goal + state + next steps + files of the newest note (≤ 350 words)
- fresh session ◄────────────┘ older decisions: memory_search(q, domains=["<domain>-notes"])
+ fresh session ◄────────────┘ older decisions: search(q) covers "<domain>-context" by default
 ```
 
 Decisions:
-- **Notes live outside the repository**, in `~/.defrost-ai/<domain>-notes/`. They hold transient session state:
-  half-made decisions, failed attempts, personal constraints. That should not land in git or in the project's docs
+- **Notes live outside the project's git**, in the context repository `defrost-memory/` (its own git repo, excluded
+  from the project's; see [LETTA_CONTEXT_REPOS.md](LETTA_CONTEXT_REPOS.md)). They hold transient session state:
+  half-made decisions, failed attempts, personal constraints. That should not land in the project's history or docs
   domain. Decisions that last belong in the real docs (the doc rules already ask for that). The notes are a
   separate domain, so searches can include or exclude them.
 - **One note is one page, and every section names the goal.** Each section makes sense alone in search results,
   following the same rules as `docs/WRITING_FOR_EXTRACTION.md`. The sections are Goal, State of the work,
   Decisions, Next steps and Files.
-- **The brief is capped and model-free.** `defrost brief` reads one file: no torch, about 0.04 s. It works as a
+- **The brief is capped and model-free.** `defrost note --brief` (the hook: `defrost hook brief`) reads one file: no torch, about 0.04 s. It works as a
   hook even when the service is down.
 - **The hook runs on `clear` and `compact`.** After an auto-compaction, the structured note sits next to the lossy
   summary as an anchor. It does not fire at startup or on resume, so a normal new session is unchanged.
-- **Opt-in, project-level only.** Enable it with `defrost setup . --handoff`. That writes the hook into the
-  project's `.claude/settings.json`, never into `~/.claude/settings.json`. `--remove-triggers` removes it.
+- **Opt-in, project-level only.** It is part of the `standard` and `full` setup profiles. That writes the hook into the
+  project's `.claude/settings.json`, never into `~/.claude/settings.json`. `defrost setup --remove` removes it.
 - **The model writes the note.** `/handoff` asks for about 300 words in a fixed shape. That is the same trust as
   `/compact`, but the output is structured, searchable, and kept across sessions.
 
@@ -60,12 +61,12 @@ Pieces:
 | piece | where |
 |---|---|
 | note writing, brief, notes domain, hook install | `defrost_ai/notes.py` |
-| MCP tools `memory_handoff`, `memory_brief` | `defrost_ai/service/mcp_server.py` |
-| CLI `defrost handoff`, `defrost brief`, `setup --handoff` | `defrost_ai/cli.py`, `project_setup.py` |
+| MCP tool `remember(kind="note")` | `defrost_ai/service/mcp_server.py` |
+| CLI `defrost note`, `defrost note --brief`, `defrost hook brief` | `defrost_ai/cli.py`, `project_setup.py` |
 | slash command `/handoff` | `defrost_ai/integrations/claude_commands/handoff.md` |
 | tests (no weights) | `tests/test_notes.py` |
 
-Checked end to end on an isolated home and port: a note was written and indexed, and `memory_search` on the
+Checked end to end on an isolated home and port: a note was written and indexed, and `search` on the
 notes domain returned the Decisions section first. The brief printed in 0.04 s.
 
 ## Doc sync: document every change, after edits and on commit
@@ -73,7 +74,7 @@ notes domain returned the Decisions section first. The brief printed in 0.04 s.
 The memory is only as good as the docs. Agents change code and leave the docs behind; the next memory search then
 repeats the stale doc. Doc sync closes that loop with a model-free planner and three hooks.
 
-**Planner** (`defrost_ai/docsync.py`, `defrost docs-plan`, MCP `memory_docs_plan`; 0.2–0.4 s on general_crm).
+**Planner** (`defrost_ai/docsync.py`, `defrost docs`, MCP `docs_for`; 0.2–0.4 s on general_crm).
 From a diff (the working tree, the staged changes, or one commit) it lists:
 
 | list | how it is found |
@@ -87,21 +88,21 @@ From a diff (the working tree, the staged changes, or one commit) it lists:
 Links are checked before they are trusted. A path-like mention must be a suffix of the changed path, because
 graphify node ids collide for files with the same name. A bare lowercase word (`proxy`, `next`) is ignored.
 
-**Triggers** (opt-in, `defrost setup . --docs-sync`; project `.claude/settings.json` and the git `post-commit`):
+**Triggers** (`standard` profile: `post-commit` and `SessionStart`; `full` adds `Stop` and `PreToolUse`; project `.claude/settings.json` and the git `post-commit`):
 
 | moment | hook | effect |
 |---|---|---|
-| agent finishes editing | `Stop` → `defrost docs-hook stop` | blocks the stop once per change set with the plan and the `/document-changes` procedure |
-| agent runs `git commit` | `PreToolUse` (Bash) → `defrost docs-hook commit` | denies the commit once per staged change set; the agent updates and stages the docs, then commits again |
-| you commit outside Claude | git `post-commit` → `defrost docs-record` | records the plan as a pending task (< 1 s, no model) |
-| next Claude session | `SessionStart` (startup, resume) → `defrost docs-pending` | lists pending commits; Claude offers `/document-changes <sha>` |
+| agent finishes editing | `Stop` → `defrost hook stop` | blocks the stop once per change set with the plan and the `/document-changes` procedure |
+| agent runs `git commit` | `PreToolUse` (Bash) → `defrost hook commit` | denies the commit once per staged change set; the agent updates and stages the docs, then commits again |
+| you commit outside Claude | git `post-commit` → `defrost hook post-commit` | records the plan as a pending task (< 1 s, no model) |
+| next Claude session | `SessionStart` (startup, resume) → `defrost hook pending` | lists pending commits; Claude offers `/document-changes <sha>` |
 | optional: right after a commit outside Claude | `--docs-auto` | background `claude -p "/document-changes <sha>"`; edits docs only, never commits, `--max-budget-usd 0.5` per commit; skipped inside Claude (`$CLAUDECODE`) |
 
 Each gate asks at most once per change set and never blocks twice in a row (`stop_hook_active`), so the agent
 cannot loop. A broken hook exits 0 and never blocks work.
 
 **`/document-changes [sha | --staged]`** is the doc counterpart of `/handoff`:
-1. Plan with `defrost docs-plan`, then read the diff.
+1. Plan with `defrost docs` (MCP `docs_for`), then read the diff.
 2. Read the code before the docs; update only what the change made false.
 3. Document new commands, env vars and files in the page that already covers that area.
 4. Follow `docs/DOC_RULES.md`, the rules from `WRITING_FOR_EXTRACTION.md`.

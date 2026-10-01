@@ -2,11 +2,11 @@
 
 A session writes a handoff note (goal, state, decisions, next steps, files) before `/clear`. Notes are files in the
 project's context repository (~/.defrost-ai/<domain>.context/notes/, a git repo: see defrost_ai/context_repo.py),
-one commit each, indexed as the search domain `<domain>-context`, so `memory_search` finds old decisions later.
+one commit each, indexed as the search domain `<domain>-context`, so `search` finds old decisions later.
 A SessionStart hook (matchers `clear` and `compact`) prints only the latest note's brief (goal + state + next steps +
 files) and the repository's root map, so the new context holds the task, not the transcript.
 
-    defrost handoff --goal "..." --state "..." --next "..." --file path   # write a note (also MCP memory_handoff)
+    defrost note "goal" --state "..." --next "..." --file path   # write a note (also MCP remember(kind="note"))
     defrost brief                                                         # what the hook prints ("" if no notes)
 
 The context repository lives outside the project: it holds transient session state (half-made decisions, failed
@@ -131,8 +131,8 @@ def brief(domain: str | None, max_words: int = BRIEF_WORDS) -> str:
     from defrost_ai.context_repo import map_brief
     return (f"[defrost-ai handoff, {f.stem[:15]}] Continue from this note, not from memory of the old conversation.\n"
             f"{body}\n"
-            f"Older decisions and notes: memory_search(query, domains=[\"{notes_domain(domain)}\"]). "
-            f"Before ending or before /clear, write a new note with memory_handoff.\n\n"
+            f"Older decisions and notes: search(question, domains=[\"{notes_domain(domain)}\"]). "
+            f"Before ending or before /clear, write a new note with remember(kind=\"note\").\n\n"
             f"[context repository map]\n{map_brief(domain, max_words=max(80, max_words // 3))}")
 
 
@@ -161,7 +161,7 @@ def install_hook(root: Path) -> str:
     starts = [h for h in hooks.get("SessionStart", []) if HOOK_TAG not in json.dumps(h)]
     exe = shutil.which("defrost") or "defrost"
     starts.append({"matcher": "clear|compact",
-                   "hooks": [{"type": "command", "command": f"{exe} brief  # {HOOK_TAG}"}]})
+                   "hooks": [{"type": "command", "command": f"{exe} hook brief  # {HOOK_TAG}"}]})
     hooks["SessionStart"] = starts
     f.write_text(json.dumps(settings, indent=2) + "\n")
     return str(f)

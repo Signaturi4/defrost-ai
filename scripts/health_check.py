@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REF = ROOT / "results/private/latency/health_reference.json"
 MEMORY = Path("~/.defrost-ai/parity-heldout").expanduser()
 QUESTIONS = ROOT / "benchmarks/heldout/questions.jsonl"
-MODES = ("fast", "rerank", "hybrid", "dense", "bm25", "all")
+MODES = ("accurate", "fast", "rerank", "hybrid", "dense", "bm25", "all")
 
 
 def kendall_tau(a, b):
@@ -108,7 +108,7 @@ def main():
         from defrost_ai.service import client
         client.ensure_service()
         h = client._call("GET", "/health")
-        t = time.perf_counter(); r = client.search(qs[1], None, "fast", "auto"); dt = time.perf_counter() - t
+        t = time.perf_counter(); r = client.search(qs[1], None, "accurate", "auto"); dt = time.perf_counter() - t
         ok = h.get("ok") and r.get("hits")
         print(f"service build {h.get('build')}  search {dt * 1000:.0f} ms, {len(r.get('hits', []))} hits  "
               f"{'ok' if ok else 'FAIL'}")

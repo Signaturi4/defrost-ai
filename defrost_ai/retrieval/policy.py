@@ -1,16 +1,14 @@
-"""Retrieval modes and the default `fast` policy.
+"""Search modes.
 
-Given the BM25 list, the dense list and (when computed) reranker scores for one query:
-  bm25     keyword ranking
-  dense    Defrost-Ret-B cosine ranking
-  hybrid   reciprocal-rank fusion (k=60) of bm25 and dense
-  rerank   Defrost-Rerank order of the pool (BM25 top-20 + dense top-20), the rest in hybrid order
-  all      RRF of bm25, dense and rerank (equal weights)
-  fast     hybrid when BM25 and dense agree on the top section, otherwise rerank  <- default
+Two modes for users:
+  accurate  (default) hybrid when BM25 and the dense retriever agree on the top section, otherwise Defrost-Rerank
+            reorders the top 40. Best quality: locked-test nDCG@10 0.838 (always reranking: 0.839) while the reranker
+            runs on about half the queries. Slower: ~1.2-1.8 s when the reranker runs (Apple M5, MLX), ~0.1 s when not.
+  fast      the best ranking without the reranker: reciprocal-rank fusion of BM25 and Defrost-Ret-B (hybrid).
+            ~0.05-0.1 s per query; locked-test nDCG@10 0.776 (dense alone 0.749, BM25 alone 0.696).
 
-Why `fast` is the default (docs/EVALUATION.md): on the locked test sets it matches `rerank` (nDCG@10 0.814 vs 0.802)
-while calling the reranker for only ~half the queries; it has no fitted parameters, so it cannot overfit. A fitted
-decision-tree router did not generalise across domains."""
+Expert modes (benchmarks, debugging): bm25, dense, hybrid, rerank (always rerank), all (RRF of the three).
+`fast` meant the reranking policy before 1.2; that policy is now called `accurate`."""
 from __future__ import annotations
 
 from collections import defaultdict
@@ -18,7 +16,19 @@ from collections import defaultdict
 RRF_K = 60
 POOL = 20
 DEPTH = 50
-MODES = ("bm25", "dense", "hybrid", "rerank", "all", "fast")
+MODES = ("bm25", "dense", "hybrid", "rerank", "all", "accurate")      # internal policies
+USER_MODES = {"accurate": "accurate", "fast": "hybrid"}                 # what users choose between
+DEFAULT_MODE = "accurate"
+
+
+def normalize(mode: str | None) -> str:
+    """User or expert mode name -> internal policy. None -> the configured default (accurate)."""
+    mode = (mode or DEFAULT_MODE).lower()
+    if mode in USER_MODES:
+        return USER_MODES[mode]
+    if mode in MODES:
+        return mode
+    raise ValueError(f"unknown search mode {mode!r}: use 'accurate' (default) or 'fast'")
 
 
 def rrf(ranked_lists: list[list[str]], weights=None) -> list[str]:
@@ -35,7 +45,7 @@ def rerank_pool(bm25: list[str], dense: list[str]) -> list[str]:
 
 
 def needs_reranker(mode: str, bm25: list[str], dense: list[str]) -> bool:
-    if mode == "fast":
+    if mode == "accurate":
         return not top_agrees(bm25, dense)
     return mode in ("rerank", "all")
 
@@ -46,7 +56,7 @@ def top_agrees(bm25: list[str], dense: list[str]) -> bool:
 
 def rank(mode: str, bm25: list[str], dense: list[str], rerank_scores: dict[str, float] | None = None):
     """-> (ranked section ids, mode actually used)"""
-    if mode == "fast":
+    if mode == "accurate":
         mode = "hybrid" if top_agrees(bm25, dense) else "rerank"
     if mode == "bm25":
         return bm25, mode

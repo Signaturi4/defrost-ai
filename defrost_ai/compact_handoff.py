@@ -97,7 +97,7 @@ def install_hook(root: Path) -> str:
     hooks = settings.setdefault("hooks", {})
     exe = shutil.which("defrost") or "defrost"
     hooks["PreCompact"] = [h for h in hooks.get("PreCompact", []) if HOOK_TAG not in json.dumps(h)] + [
-        {"hooks": [{"type": "command", "command": f"{exe} compact-handoff  # {HOOK_TAG}"}]}]
+        {"hooks": [{"type": "command", "command": f"{exe} hook pre-compact  # {HOOK_TAG}"}]}]
     f.write_text(json.dumps(settings, indent=2) + "\n")
     return str(f)
 

@@ -4,7 +4,7 @@ Imports are lazy so the stdlib-only parts (defrost_ai.service.client, the Shephe
 environment without torch."""
 import os as _os
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 # Before 1.2 the package was `kev-memory`: honour its environment variables and data folder for one minor version.
 for _k, _v in list(_os.environ.items()):
@@ -13,6 +13,11 @@ for _k, _v in list(_os.environ.items()):
 if "DEFROST_HOME" not in _os.environ and not _os.path.isdir(_os.path.expanduser("~/.defrost-ai")) \
         and _os.path.isdir(_os.path.expanduser("~/.kev-memory")):
     _os.environ["DEFROST_HOME"] = _os.path.expanduser("~/.kev-memory")
+try:                                                   # ~/.defrost-ai/config.toml -> settings read from the environment
+    from defrost_ai import settings as _settings
+    _settings.export_env()
+except Exception:                                      # noqa: BLE001  (a broken config file must not break imports)
+    pass
 
 
 def build_id() -> str:

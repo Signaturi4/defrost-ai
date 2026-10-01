@@ -255,18 +255,16 @@ def install_memory_rule(root: Path, name: str, doc_trust: str | None = None) -> 
     text = f.read_text() if f.exists() else ""
     block = f"""{RULE_START}
 ## Project memory (defrost-ai)
-- **Answer:** for "how do I / why does / what happens when" questions, call `memory_search` (MCP server `defrost`,
-  domain `{name}`) first, and cite `path:Lstart-end`. Use grep for exact code.
+Tools (MCP server `defrost`): `search`, `docs_for`, `remember`, `refresh`. Memory `{name}`.
+- **Answer:** for "how do I / why does / what happens when" questions, call `search` first and cite
+  `path:Lstart-end`. Use grep for exact strings and code.
 {trust.RULE[level]}
-- **Doc/code conflicts are the user's call (human in the loop):** show both sides (doc `path:L..` and what it
-  says; code `path:line` and what it does) and ask with AskUserQuestion: "Code is right: update the doc", "Doc is
-  right: the code is a bug", "Not a conflict", "Not sure: mark as open question". Record the answer with
-  `memory_resolve_conflict`, then act on it (never change code for a "doc is right" answer unless asked). Until
-  answered, state both versions. Hits with a `resolved:` line are already decided: do not ask again.
-- **Keep docs current, on every change:** (1) before finishing, call `memory_docs_for` with the files you changed;
-  (2) update those sections in the same change (rules: `docs/DOC_RULES.md` if present); (3) a new feature, command,
-  env var or config key gets a section; (4) bring every doc/code conflict you found to the user as above.
-  The memory refreshes itself after commits to main; otherwise run `/memory-update`.
+- **Doc/code conflicts are the user's call:** show both sides (doc `path:L..`, code `path:line`), ask with
+  AskUserQuestion ("Code is right: update the doc" / "Doc is right: the code is a bug" / "Not a conflict" / "Not
+  sure"), save the answer with `remember(kind="decision")`, then act on it. Hits with `resolved:` are decided.
+- **Keep docs current:** after changing files, call `docs_for` with them and update those sections in the same
+  change; new commands, env vars and config keys get a section (rules: `docs/DOC_RULES.md`).
+- **Long tasks:** before /clear, save a handoff note with `remember(kind="note")`.
 {RULE_END}"""
     text = re.sub(rf"\n*{re.escape(RULE_START)}.*?{re.escape(RULE_END)}\n*", "\n", text, flags=re.S).rstrip()
     i = text.find("<!-- defrost-ai:doc-rules:start -->")              # keep the doc-rules block last
@@ -287,7 +285,7 @@ def remove_memory_rule(root: Path) -> None:
 def setup(path=".", domain=None, build="now", on_main_merge=False, every_hours=None, claude_hook=False,
           doc_rules=False, claude=False, remove=False, log=print, doc_trust=None, handoff=False, docs_sync=False,
           docs_auto=False, docs_budget=0.5, handoff_on_compact=False, docs_auto_merge=False,
-          memory_dir="defrost-memory") -> dict:
+          memory_dir="defrost-memory", docs_gate=True) -> dict:
     """doc_trust: "high" | "low" | None (keep the stored level; "low" for a new domain). See defrost_ai/trust.py.
     memory_dir: folder in the project for the context repository (None keeps it in ~/.defrost-ai)."""
     root = Path(path).expanduser().resolve()
@@ -344,8 +342,9 @@ def setup(path=".", domain=None, build="now", on_main_merge=False, every_hours=N
         from defrost_ai import docsync
         trig["docs_sync"] = {"auto": docs_auto, "budget_usd": docs_budget if docs_auto else 0,
                              "auto_merge": bool(docs_auto and docs_auto_merge),
+                             "gate": docs_gate,
                              "files": docsync.install_hooks(root, auto=docs_auto, budget_usd=docs_budget,
-                                                            auto_merge=docs_auto_merge)}
+                                                            auto_merge=docs_auto_merge, gate=docs_gate)}
     state_file(name).write_text(json.dumps({"path": str(root), "installed": time.strftime("%Y-%m-%dT%H:%M:%S"),
                                             "triggers": trig}, indent=1))
     out["triggers"] = trig
