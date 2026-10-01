@@ -78,7 +78,9 @@ curl -fsSL https://raw.githubusercontent.com/Signaturi4/defrost-ai/main/install.
 
 It needs [uv](https://docs.astral.sh/uv/). It installs `defrost-ai` (the `defrost` command) as a uv tool (Python 3.12),
 fetches the adapters (about 140 MB, checked by sha256) to `~/.cache/defrost-ai`, and registers the MCP server and
-slash commands with Claude Code.
+slash commands with Claude Code. It installs the release named in the script (a pinned tag, not the moving `main`); set
+`DEFROST_VERSION=x.y.z` for another release or `DEFROST_REF=main` for the development branch. `defrost --version`
+shows the installed code and weights versions.
 
 Then open Claude Code in any repository and type `/defrost-setup`, or run it in a terminal:
 

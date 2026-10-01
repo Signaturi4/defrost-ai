@@ -74,8 +74,10 @@ def models_dir(download: bool = True) -> Path:
                             "to a directory with MANIFEST.json.")
 
 
-def download_weights(url: str = WEIGHTS_URL, sha256: str = WEIGHTS_SHA256, log=print) -> Path:
-    """Fetch the release archive (~130 MB) once, verify its sha256, unpack to ~/.cache/defrost-ai/models."""
+def download_weights(url: str | None = None, sha256: str | None = None, log=print) -> Path:
+    """Fetch the release archive (~130 MB) once, verify its sha256, unpack to ~/.cache/defrost-ai/models.
+    url/sha256 default to WEIGHTS_URL/WEIGHTS_SHA256, read at call time (not bound when the module loads)."""
+    url, sha256 = url or WEIGHTS_URL, sha256 or WEIGHTS_SHA256
     import shutil
     import tarfile
     import tempfile
