@@ -179,8 +179,9 @@ $ defrost config search.k --reset
 | `search.mode` | `accurate` (default), `fast` | `DEFROST_SEARCH_MODE` |
 | `search.k` | `auto` (1-5, fewer when the top hit is clearly right) or a number | `DEFROST_SEARCH_K` |
 | `project.doc_trust` | default for new projects: `low`, `high` | `DEFROST_DOC_TRUST` |
-| `models.backend` | `auto` (MLX on Apple Silicon), `mlx`, `torch` | `DEFROST_BACKEND` |
+| `models.backend` | `auto` (MLX fp16 on Apple Silicon, PyTorch elsewhere: bf16 on CUDA, fp32 on CPU), `mlx`, `torch` (on a Mac: a slower fp32 debug path) | `DEFROST_BACKEND` |
 | `models.rerank_dtype` | `auto`, `fp16`, `bf16`, `fp32` | `DEFROST_RERANK_DTYPE` |
+| `models.allow_older_weights` | `false`; `true` runs older cached weights when v1.1.0 is missing (every result says so) | `DEFROST_ALLOW_OLDER_WEIGHTS` |
 | `models.rerank_cache` | reranker scores kept for repeated questions (`0` = off) | `DEFROST_RERANK_CACHE` |
 | `service.port` | port of the local search service (8765) | `DEFROST_URL` |
 
@@ -401,7 +402,10 @@ The research behind the rules: [docs/WRITING_FOR_EXTRACTION.md](docs/WRITING_FOR
 The LoRA adapters (MNTP, CGSA, Defrost-Ret-B, Defrost-Rerank v2 + score head, about 140 MB) are attached to the
 [v1.1.0 release](https://github.com/Signaturi4/defrost-ai/releases/tag/v1.1.0). `install.sh` (or
 `defrost download-weights`, or the first search) fetches them to `~/.cache/defrost-ai/models` and checks the
-archive's sha256. By hand:
+archive's sha256. If they cannot be fetched, search stops with an error that names the version and the fix
+(it does not fall back to older weights). `defrost status` shows the version in use and the size of the
+merged-weights cache (`~/.cache/defrost-ai/merged`, fp32, about 1.8 GB per model; caches for other weights are
+removed after 7 days unused, on `download-weights` and on service start). By hand:
 
 ```sh
 curl -L -o weights.tar.gz https://github.com/Signaturi4/defrost-ai/releases/download/v1.1.0/defrost-ai-weights-v1.1.0.tar.gz

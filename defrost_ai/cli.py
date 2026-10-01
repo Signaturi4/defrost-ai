@@ -221,8 +221,10 @@ def main(argv=None):
         if a.out:
             open(a.out, "w").write(json.dumps(res, indent=1))
     elif a.cmd == "download-weights":
+        from defrost_ai.models.merged_cache import gc_current
         from defrost_ai.models.weights import download_weights, models_dir
         print(f"weights ready: {models_dir()}") if _weights_ok() else download_weights()
+        gc_current()
     elif a.cmd == "mcp":
         from defrost_ai.service.mcp_server import main as mcp_main
         mcp_main()
@@ -467,8 +469,8 @@ def cmd_status(a):
         n = notes_of.get(r["domain"])
         if n:
             print(f"  notes and decisions: {(n.get('counts') or {}).get('docs', 0)} files")
-    print(f"\nsearch mode {settings.get('search.mode')} | backend {_backend()} | weights {_weights_version()} "
-          f"| settings: defrost config")
+    print(f"\nsearch mode {settings.get('search.mode')} | backend {_backend()} | settings: defrost config")
+    print(_weights_line())
 
 
 def _backend() -> str:
@@ -479,12 +481,19 @@ def _backend() -> str:
         return "torch"
 
 
-def _weights_version() -> str:
-    try:
-        from defrost_ai.models.weights import models_dir, verify
-        return str(verify(models_dir(download=False)).get("version"))
-    except Exception:                                   # noqa: BLE001
-        return "not downloaded"
+def _weights_line() -> str:
+    from defrost_ai.models.merged_cache import merged_cache_size
+    from defrost_ai.models.weights import status
+    w = status()
+    if w["dir"] is None:
+        line = f"weights: not downloaded (expected v{w['expected']}; run `defrost download-weights`)"
+    elif w["matches"]:
+        line = f"weights: v{w['version']} ({w['source']}), matches the pinned v{w['expected']}"
+    else:
+        line = (f"weights: v{w['version']} ({w['source']}), MISMATCH: expected v{w['expected']} "
+                f"(run `defrost download-weights`)")
+    n, size = merged_cache_size()
+    return line + f"\nmerged-weights cache: {n} model(s), {size / 1e9:.1f} GB"
 
 
 def cmd_refresh(a):

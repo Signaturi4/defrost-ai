@@ -100,4 +100,5 @@ class Library:
         for i, h in enumerate(hits[:k]):
             h["rank"] = i + 1
         return {"query": query, "mode": mode, "domains": names, "merge": merge, "k": k, "hits": hits[:k],
-                "mode_used": {n: r["mode_used"] for n, r in zip(names, results)}}
+                "mode_used": {n: r["mode_used"] for n, r in zip(names, results)},
+                "weights_warning": next((r.get("weights_warning") for r in results if r.get("weights_warning")), None)}
