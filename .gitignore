@@ -1,0 +1,11 @@
+models/**/*.safetensors
+models/**/*.pt
+benchmarks/.sources/
+benchmarks/*/workspace.json
+__pycache__/
+*.egg-info/
+.venv/
+runs/
+data/
+results/private/
+docs/research/papers/

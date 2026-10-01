@@ -1,0 +1,30 @@
+{
+ "repos": {
+  "uvicorn": "https://github.com/encode/uvicorn",
+  "cattrs": "https://github.com/python-attrs/cattrs",
+  "structlog": "https://github.com/hynek/structlog"
+ },
+ "commits": {
+  "uvicorn": "528a3ac5031bf777ccd966d74db3034fe99fd69c",
+  "cattrs": "0a1d658438f1cd0d2a409edf867c0f1d3ef40398",
+  "structlog": "73393f34b40c15688b3fdd0982889b225f11b59b"
+ },
+ "workspace": {
+  "name": "e2e",
+  "out": "~/.kev-memory/e2e",
+  "components": [
+   {
+    "name": "uvicorn",
+    "path": "benchmarks/.sources/uvicorn"
+   },
+   {
+    "name": "cattrs",
+    "path": "benchmarks/.sources/cattrs"
+   },
+   {
+    "name": "structlog",
+    "path": "benchmarks/.sources/structlog"
+   }
+  ]
+ }
+}

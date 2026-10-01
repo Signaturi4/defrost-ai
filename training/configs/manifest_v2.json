@@ -1,0 +1,36 @@
+{
+  "n_train": 68550,
+  "n_val": 512,
+  "by_source": {
+    "stackexchange": 10903,
+    "techdoc": 20917,
+    "msmarco": 17861,
+    "quora": 2474,
+    "hotpotqa": 6959,
+    "allnli": 2480,
+    "nq": 6956
+  },
+  "leakage_dropped": {
+    "stackexchange": 7,
+    "techdoc": 287
+  },
+  "no_negative_dropped": {
+    "nq": 1,
+    "stackexchange": 1
+  },
+  "gate": "13-gram overlap vs held-out/client bench questions+answers, every section of both eval KBs, ODEX/DS-1000 queries and gold docs",
+  "excluded_projects_regex": "client|ii-|jinja|werkzeug|marshmallow|research",
+  "instructions": {
+    "msmarco": "Given a web search query, retrieve relevant passages that answer the query",
+    "nq": "Given a question, retrieve Wikipedia passages that answer the question",
+    "hotpotqa": "Given a multi-hop question, retrieve documents that can help answer the question",
+    "stackexchange": "Given a question title from a technical Q&A site, retrieve the body of that question",
+    "allnli": "Given a premise, retrieve a hypothesis that is entailed by the premise",
+    "quora": "Given a question, retrieve questions that are semantically equivalent to the given question",
+    "techdoc": "Given a developer question about a software project, retrieve the documentation passage that answers it"
+  },
+  "sha256": {
+    "train": "642f3abdf54e46f44daaebcf09bc7fbded0a96dc23c29bb9962e808c3dd0d5eb",
+    "val": "2cb9568bc55ddd6b1782bca8732ae6abe49330a92f04404192c46482cc72c2cf"
+  }
+}

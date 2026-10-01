@@ -1,0 +1,379 @@
+diff --git a/graphify/__main__.py b/graphify/__main__.py
+index 3a6fcd2..e920cf5 100644
+--- a/graphify/__main__.py
++++ b/graphify/__main__.py
+@@ -195,6 +195,13 @@ Rules:
+ - After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost)
+ """
+ 
++# kev-memory: added to the section when this repo has a knowledge memory (graphify-out/kev-memory.json)
++_CLAUDE_MD_MEMORY_RULE = """\
++- For questions about documented behaviour, configuration or usage ("how do I…", "why does…", "what happens when…"),
++  run `graphify memory search "<question>"` (MCP: `memory_search`) first: it returns the documentation sections that
++  answer it, cited as path:Lstart-end, each with the code it names. Use the graph tools for structure and call paths.
++"""
++
+ _CLAUDE_MD_MARKER = "## graphify"
+ 
+ # AGENTS.md section for Codex, OpenCode, and OpenClaw.
+@@ -815,15 +822,18 @@ def _agents_uninstall(project_dir: Path, platform: str = "") -> None:
+ def claude_install(project_dir: Path | None = None) -> None:
+     """Write the graphify section to the local CLAUDE.md."""
+     target = (project_dir or Path(".")) / "CLAUDE.md"
++    section = _CLAUDE_MD_SECTION
++    if ((project_dir or Path(".")) / "graphify-out" / "kev-memory.json").exists():
++        section += _CLAUDE_MD_MEMORY_RULE
+ 
+     if target.exists():
+         content = target.read_text(encoding="utf-8")
+         if _CLAUDE_MD_MARKER in content:
+             print("graphify already configured in CLAUDE.md")
+             return
+-        new_content = content.rstrip() + "\n\n" + _CLAUDE_MD_SECTION
++        new_content = content.rstrip() + "\n\n" + section
+     else:
+-        new_content = _CLAUDE_MD_SECTION
++        new_content = section
+ 
+     target.write_text(new_content, encoding="utf-8")
+     print(f"graphify section written to {target.resolve()}")
+@@ -941,6 +951,9 @@ def main() -> None:
+         print("    --nodes N1 N2 ...       source node labels cited in the answer")
+         print("    --memory-dir DIR        memory directory (default: graphify-out/memory)")
+         print("  benchmark [graph.json]  measure token reduction vs naive full-corpus approach")
++        print("  memory init [PATH]      build a searchable knowledge memory (hybrid RAG: BM25 + Kev-Ret + Kev-Rerank)")
++        print("  memory search \"Q\"       cited doc sections + the code they name   (memory --help for all commands)")
++        print("  memory update DOMAIN    incremental rebuild after changes; memory hook install --domain D to automate")
+         print("  hook install            install post-commit/post-checkout git hooks (all platforms)")
+         print("  hook uninstall          remove git hooks")
+         print("  hook status             check if git hooks are installed")
+@@ -1351,6 +1364,10 @@ def main() -> None:
+             print("Nothing to update or rebuild failed — check output above.", file=sys.stderr)
+             sys.exit(1)
+ 
++    elif cmd == "memory":
++        from graphify.memory import cli as memory_cli
++        sys.exit(memory_cli(sys.argv[2:]))
++
+     elif cmd == "benchmark":
+         from graphify.benchmark import run_benchmark, print_benchmark
+         graph_path = sys.argv[2] if len(sys.argv) > 2 else "graphify-out/graph.json"
+diff --git a/graphify/hooks.py b/graphify/hooks.py
+index 6e0155f..b820b12 100644
+--- a/graphify/hooks.py
++++ b/graphify/hooks.py
+@@ -76,6 +76,11 @@ try:
+ except Exception as exc:
+     print(f'[graphify hook] Rebuild failed: {exc}')
+     sys.exit(1)
++try:
++    from graphify.memory import refresh_from_hook
++    refresh_from_hook(Path('.'))
++except Exception as exc:
++    print(f'[graphify hook] memory refresh skipped: {exc}')
+ "
+ # graphify-hook-end
+ """
+@@ -118,6 +123,11 @@ try:
+ except Exception as exc:
+     print(f'[graphify] Rebuild failed: {exc}')
+     sys.exit(1)
++try:
++    from graphify.memory import refresh_from_hook
++    refresh_from_hook(Path('.'))
++except Exception as exc:
++    print(f'[graphify] memory refresh skipped: {exc}')
+ "
+ # graphify-checkout-hook-end
+ """
+diff --git a/graphify/memory.py b/graphify/memory.py
+new file mode 100644
+index 0000000..b8c8751
+--- /dev/null
++++ b/graphify/memory.py
+@@ -0,0 +1,234 @@
++# kev-memory integration: hybrid-RAG knowledge memory next to the graph (stdlib only; talks to the kev-memory service)
++"""graphify memory — a searchable, cited knowledge memory built next to the code graph.
++
++graphify builds the structural graph (AST, 0 tokens). kev-memory adds the text side: every doc section is indexed
++with BM25 + Kev-Ret-B vectors, re-ranked by Kev-Rerank when needed, and linked to the code nodes it names. On the
++locked benchmarks this beats a plain BM25 section index by +0.10-0.12 nDCG@10 and +0.09-0.10 RAGAS (NVIDIA metrics).
++
++The models run in a resident service (`kev-memory serve`, started on demand), so this module has no ML dependencies.
++
++    graphify memory init [PATH] [--domain NAME]     create a workspace for a repo/folder and build its memory
++    graphify memory build WORKSPACE.json --domain NAME
++    graphify memory update DOMAIN [--wait]          rebuild after changes (incremental; new/edited sections only)
++    graphify memory search "question" [--domain D]... [--mode fast|rerank|...] [-k 5|auto] [--json]
++    graphify memory domains | status
++    graphify memory rollback DOMAIN                 restore the previous build
++
++`graphify memory init` also writes graphify-out/kev-memory.json; after that, graphify's own git hooks
++(`graphify hook install`) refresh the memory after every commit and branch switch, right after the code graph.
++
++Environment: KEV_MEMORY_URL (default http://127.0.0.1:8765), KEV_MEMORY_SERVE_CMD (default "kev-memory serve"),
++KEV_MEMORY_DOMAINS (default domains for search, comma-separated; default: all)."""
++from __future__ import annotations
++
++import json
++import os
++import shlex
++import subprocess
++import sys
++import time
++import urllib.error
++import urllib.request
++from pathlib import Path
++
++URL = os.environ.get("KEV_MEMORY_URL", "http://127.0.0.1:8765")
++SERVE_CMD = os.environ.get("KEV_MEMORY_SERVE_CMD", "kev-memory serve")
++HOME = Path(os.environ.get("KEV_MEMORY_HOME", "~/.kev-memory")).expanduser()
++MODES = ["fast", "rerank", "hybrid", "dense", "bm25", "all"]
++
++
++# ---- service client ------------------------------------------------------------------------------------------------
++def _call(method: str, path: str, body: dict | None = None, timeout: float = 900):
++    req = urllib.request.Request(URL + path, method=method, data=None if body is None else json.dumps(body).encode(),
++                                 headers={"Content-Type": "application/json"})
++    try:
++        with urllib.request.urlopen(req, timeout=timeout) as r:
++            return json.loads(r.read())
++    except urllib.error.HTTPError as e:
++        raise RuntimeError(json.loads(e.read() or b"{}").get("error", str(e))) from None
++
++
++def alive() -> bool:
++    try:
++        return bool(_call("GET", "/health", timeout=2).get("ok"))
++    except (OSError, RuntimeError):
++        return False
++
++
++def ensure_service(wait: float = 180) -> None:
++    if alive():
++        return
++    HOME.mkdir(parents=True, exist_ok=True)
++    log = open(HOME / "service.log", "a")
++    port = URL.rsplit(":", 1)[-1]
++    subprocess.Popen(shlex.split(SERVE_CMD) + ["--port", port], stdout=log, stderr=log, start_new_session=True)
++    t0 = time.time()
++    while time.time() - t0 < wait:
++        if alive():
++            return
++        time.sleep(1)
++    raise RuntimeError(f"kev-memory service did not start ({SERVE_CMD}); see {HOME / 'service.log'}")
++
++
++DEFAULT_DOMAINS = [d for d in os.environ.get("KEV_MEMORY_DOMAINS", "").split(",") if d]
++
++
++def search(query: str, domains=None, mode: str = "fast", k: int | str = 5) -> dict:
++    """domains: None -> KEV_MEMORY_DOMAINS (comma-separated) if set, else every registered domain."""
++    ensure_service()
++    domains = domains or DEFAULT_DOMAINS or None
++    return _call("POST", "/search", {"query": query, "domains": domains, "mode": mode, "k": k, "context": True})
++
++
++def domains() -> dict:
++    ensure_service()
++    return _call("GET", "/domains")
++
++
++def update(domain: str | None = None, workspace: str | None = None, wait: bool = True, description: str = "") -> dict:
++    ensure_service()
++    job = _call("POST", "/update", {"domain": domain, "workspace": workspace, "description": description})
++    if not wait:
++        return job
++    while True:
++        state = _call("GET", f"/jobs/{job['job']}")
++        if state["state"] in ("done", "failed"):
++            return state
++        time.sleep(2)
++
++
++def rollback(domain: str) -> dict:
++    ensure_service()
++    return _call("POST", "/rollback", {"domain": domain})
++
++
++# ---- workspace + hook -----------------------------------------------------------------------------------------------
++def init_workspace(path: Path, name: str) -> Path:
++    """One-component workspace for a repo or folder; memory written to ~/.kev-memory/<name> (never inside the repo)."""
++    path = path.resolve()
++    ws = {"name": name, "out": str(HOME / name), "components": [{"name": name, "path": str(path)}]}
++    f = HOME / f"{name}.workspace.json"
++    HOME.mkdir(parents=True, exist_ok=True)
++    f.write_text(json.dumps(ws, indent=1))
++    return f
++
++
++MARKER = Path("graphify-out") / "kev-memory.json"
++
++
++def write_marker(repo: Path, domain: str, workspace: Path) -> Path:
++    """graphify-out/kev-memory.json tells graphify's own git hooks (graphify hook install) to refresh this domain."""
++    f = repo / MARKER
++    f.parent.mkdir(parents=True, exist_ok=True)
++    f.write_text(json.dumps({"domain": domain, "workspace": str(workspace)}, indent=1))
++    return f
++
++
++def refresh_from_hook(repo: Path) -> None:
++    """Called by graphify's post-commit / post-checkout hook after the code graph rebuild: queue a background
++    memory update for the domain named in graphify-out/kev-memory.json. Never blocks and never fails the commit."""
++    f = repo / MARKER
++    if not f.exists():
++        return
++    domain = json.loads(f.read_text())["domain"]
++    HOME.mkdir(parents=True, exist_ok=True)
++    log = open(HOME / "hook.log", "a")
++    subprocess.Popen([sys.executable, "-m", "graphify", "memory", "update", domain, "--no-wait"], stdout=log,
++                     stderr=log, start_new_session=True)            # detached: the service may need to start first
++    print(f"[graphify hook] memory update queued for '{domain}' (log {HOME / 'hook.log'})")
++
++
++# ---- MCP tools (registered by graphify.serve) ------------------------------------------------------------------------
++MCP_TOOLS = [
++    {"name": "memory_search",
++     "description": "Search the knowledge memory: documentation sections of every registered domain, each with the "
++                    "code it names, cited as domain:path:Lstart-end. mode: fast (default), rerank (most accurate), "
++                    "dense (paraphrased how/why), bm25 (exact identifiers, error strings).",
++     "inputSchema": {"type": "object", "properties": {
++         "query": {"type": "string"},
++         "domains": {"type": "array", "items": {"type": "string"}},
++         "mode": {"type": "string", "enum": MODES, "default": "fast"},
++         "k": {"type": ["integer", "string"], "default": 5,
++               "description": "number of sections, or \"auto\": 1-5 from the retriever's calibrated confidence"}},
++         "required": ["query"]}},
++    {"name": "memory_domains", "description": "List knowledge-memory domains with sources, build time and counts.",
++     "inputSchema": {"type": "object", "properties": {}}},
++    {"name": "memory_update",
++     "description": "Rebuild a domain's memory from its sources now (incremental). Use after docs or code changed.",
++     "inputSchema": {"type": "object", "properties": {"domain": {"type": "string"}}, "required": ["domain"]}},
++]
++
++
++def _k(v):
++    return "auto" if v == "auto" else int(v)
++
++
++def mcp_call(name: str, args: dict) -> str:
++    if name == "memory_search":
++        res = search(args["query"], args.get("domains"), args.get("mode", "fast"), _k(args.get("k", 5)))
++        return f"mode {res['mode']} -> {res['mode_used']}\n\n{res.get('context') or 'no results'}"
++    if name == "memory_domains":
++        return json.dumps(domains(), indent=1)
++    if name == "memory_update":
++        res = update(args["domain"], wait=True)
++        if res.get("state") == "done":
++            m = res["manifest"]
++            return json.dumps({"state": "done", "counts": m["counts"], "changed": m["changed"]["n"],
++                               "seconds": res.get("seconds")}, indent=1)
++        return json.dumps({"state": res.get("state"), "error": res.get("error")}, indent=1)
++    raise KeyError(name)
++
++
++# ---- CLI ------------------------------------------------------------------------------------------------------------
++def _print_search(res: dict, as_json: bool):
++    if as_json:
++        print(json.dumps(res, indent=1))
++    else:
++        print(f"mode {res['mode']} -> {res['mode_used']}\n")
++        print(res.get("context") or "no results")
++
++
++def cli(argv: list[str]) -> int:
++    import argparse
++    ap = argparse.ArgumentParser(prog="graphify memory", description=__doc__,
++                                 formatter_class=argparse.RawDescriptionHelpFormatter)
++    sub = ap.add_subparsers(dest="cmd", required=True)
++    i = sub.add_parser("init"); i.add_argument("path", nargs="?", default="."); i.add_argument("--domain")
++    i.add_argument("--description", default="")
++    b = sub.add_parser("build"); b.add_argument("workspace"); b.add_argument("--domain", required=True)
++    b.add_argument("--description", default="")
++    u = sub.add_parser("update"); u.add_argument("domain"); u.add_argument("--no-wait", action="store_true")
++    s = sub.add_parser("search"); s.add_argument("query"); s.add_argument("--domain", action="append")
++    s.add_argument("--mode", default="fast", choices=MODES); s.add_argument("-k", type=_k, default=5)
++    s.add_argument("--json", action="store_true")
++    sub.add_parser("domains"); sub.add_parser("status")
++    r = sub.add_parser("rollback"); r.add_argument("domain")
++    a = ap.parse_args(argv)
++    try:
++        if a.cmd == "init":
++            path = Path(a.path)
++            name = a.domain or path.resolve().name.lower().replace(" ", "-")
++            ws = init_workspace(path, name)
++            print(f"workspace {ws}; building memory '{name}' ...")
++            res = update(name, str(ws), wait=True, description=a.description)
++            print(json.dumps({k: res.get(k) for k in ("state", "seconds", "error")} |
++                             ({"counts": res["manifest"]["counts"]} if res.get("manifest") else {}), indent=1))
++            print(f"marker {write_marker(path.resolve(), name, ws)}; run `graphify hook install` to refresh on commit")
++        elif a.cmd == "build":
++            res = update(a.domain, str(Path(a.workspace).resolve()), wait=True, description=a.description)
++            print(json.dumps({k: v for k, v in res.items() if k not in ("log",)}, indent=1, default=str)[:4000])
++        elif a.cmd == "update":
++            res = update(a.domain, wait=not a.no_wait)
++            print(json.dumps({k: v for k, v in res.items() if k != "log"}, indent=1, default=str)[:4000])
++        elif a.cmd == "search":
++            _print_search(search(a.query, a.domain, a.mode, a.k), a.json)
++        elif a.cmd == "domains":
++            print(json.dumps(domains(), indent=1))
++        elif a.cmd == "status":
++            print(json.dumps({"service": URL, "alive": alive(), "domains": domains() if alive() else None}, indent=1))
++        elif a.cmd == "rollback":
++            print(json.dumps(rollback(a.domain)))
++    except RuntimeError as e:
++        print(f"error: {e}", file=sys.stderr)
++        return 1
++    return 0
+diff --git a/graphify/serve.py b/graphify/serve.py
+index 361dec3..441108f 100644
+--- a/graphify/serve.py
++++ b/graphify/serve.py
+@@ -6,6 +6,7 @@ from pathlib import Path
+ import networkx as nx
+ from networkx.readwrite import json_graph
+ from graphify.security import sanitize_label
++from graphify import memory as _memory
+ 
+ 
+ def _load_graph(graph_path: str) -> nx.Graph:
+@@ -232,7 +233,7 @@ def serve(graph_path: str = "graphify-out/graph.json") -> None:
+                     "required": ["source", "target"],
+                 },
+             ),
+-        ]
++        ] + [types.Tool(**t) for t in _memory.MCP_TOOLS]
+ 
+     def _tool_query_graph(arguments: dict) -> str:
+         question = arguments["question"]
+@@ -339,6 +340,7 @@ def serve(graph_path: str = "graphify-out/graph.json") -> None:
+         return f"Shortest path ({hops} hops):\n  " + " ".join(segments)
+ 
+     _handlers = {
++        **{t["name"]: (lambda args, n=t["name"]: _memory.mcp_call(n, args)) for t in _memory.MCP_TOOLS},
+         "query_graph": _tool_query_graph,
+         "get_node": _tool_get_node,
+         "get_neighbors": _tool_get_neighbors,
+diff --git a/pyproject.toml b/pyproject.toml
+index 1b7ab96..eec4899 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -42,7 +42,7 @@ Repository = "https://github.com/safishamsi/graphify"
+ Issues = "https://github.com/safishamsi/graphify/issues"
+ 
+ [project.optional-dependencies]
+-mcp = ["mcp"]
++mcp = ["mcp>=1.2,<2"]
+ neo4j = ["neo4j"]
+ pdf = ["pypdf", "html2text"]
+ watch = ["watchdog"]
+@@ -50,7 +50,7 @@ svg = ["matplotlib"]
+ leiden = ["graspologic; python_version < '3.13'"]
+ office = ["python-docx", "openpyxl"]
+ video = ["faster-whisper", "yt-dlp"]
+-all = ["mcp", "neo4j", "pypdf", "html2text", "watchdog", "graspologic; python_version < '3.13'", "python-docx", "openpyxl", "faster-whisper", "yt-dlp", "matplotlib"]
++all = ["mcp>=1.2,<2", "neo4j", "pypdf", "html2text", "watchdog", "graspologic; python_version < '3.13'", "python-docx", "openpyxl", "faster-whisper", "yt-dlp", "matplotlib"]
+ 
+ [project.scripts]
+ graphify = "graphify.__main__:main"

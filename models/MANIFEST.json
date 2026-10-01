@@ -1,0 +1,56 @@
+{
+ "version": "1.0.0",
+ "base_model": "Qwen/Qwen2.5-0.5B",
+ "base_revision": "060db6499f32faf8b98477b0a26969ef7d8b9987",
+ "chain": {
+  "kev-ret-b": [
+   "base-adapters/mntp",
+   "base-adapters/cgsa",
+   "kev-ret-b"
+  ],
+  "kev-rerank": [
+   "base-adapters/mntp",
+   "base-adapters/cgsa",
+   "kev-rerank",
+   "kev-rerank/head.pt"
+  ]
+ },
+ "files": {
+  "base-adapters/mntp/adapter_config.json": {
+   "sha256": "e219ed90f68dcf76999a56b0730bbfb87a1b8d3d3039328b961606e9faf6949b",
+   "bytes": 813
+  },
+  "base-adapters/mntp/adapter_model.safetensors": {
+   "sha256": "72729c2193aafc2c7a2ef0b2af00fc80406242be26e423e9ce998c8cf1632100",
+   "bytes": 35235088
+  },
+  "base-adapters/cgsa/adapter_config.json": {
+   "sha256": "0b5018d83f3606ca7c6571ecb81e158427643c3fcfff3830b26d631240cc813f",
+   "bytes": 813
+  },
+  "base-adapters/cgsa/adapter_model.safetensors": {
+   "sha256": "4069930e4774b1de73bac70a0ab266dc65cc45ba990a363305b10e8e5750d82c",
+   "bytes": 35235088
+  },
+  "kev-ret-b/adapter_config.json": {
+   "sha256": "242b70e263aa43f1070a0a0a85a0d21ccd155dc60ef44fb33c7237ab467da9d0",
+   "bytes": 1270
+  },
+  "kev-ret-b/adapter_model.safetensors": {
+   "sha256": "1b2e5238bc3f0c2ca2b7abc71deb105612592cef312d9c297f1b4d1351dfb517",
+   "bytes": 35235088
+  },
+  "kev-rerank/adapter_config.json": {
+   "sha256": "b8758c2d896777a8d1c19185547861be82846227cd4b8e1bf3b5723ddc55056e",
+   "bytes": 1270
+  },
+  "kev-rerank/adapter_model.safetensors": {
+   "sha256": "f6c6f92432283f62dbbe2800a8ca497e2a09846d93f6e38d4c3f4d07a31677b2",
+   "bytes": 35235088
+  },
+  "kev-rerank/head.pt": {
+   "sha256": "69abbcef38c6c723cf24b62986b450d4496f85d9d3ea116b501519e5451058ea",
+   "bytes": 12991
+  }
+ }
+}
