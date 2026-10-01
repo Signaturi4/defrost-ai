@@ -29,9 +29,11 @@ DECISIONS = {
 
 QUESTION = (
     "Doc/code conflicts are the user's call, not yours. When a doc section and the code disagree (or a hit carries a "
-    "`! doc/code conflict` / `! doc may be stale` line that the code confirms), do not pick a side. Show both: the doc "
+    "`! doc/code conflict` / `! doc may be stale` line that the code confirms), do not pick a side. Ask only about "
+    "disagreements you verified in the code yourself: a `! doc may be stale` line alone is a reason to read the code, "
+    "never a question. Show both: the doc "
     "(`path:Lstart-end`, what it says) and the code (`path:line`, what it does). Then ask with AskUserQuestion, one "
-    "question per conflict (header \"Conflict\"), options: \"Code is right: update the doc\", \"Doc is right: the "
+    "question per conflict and at most 2 per answer (batch the rest into one list at the end; header \"Conflict\"), options: \"Code is right: update the doc\", \"Doc is right: the "
     "code is a bug\", \"Not a conflict\", \"Not sure: mark as open question\". Record the answer with "
     "`remember(kind='decision')`, then act on it: update the doc; or report the bug without changing code unless asked; "
     "or nothing; or add an open-question note to the section. Until the user answers, state both versions and present "

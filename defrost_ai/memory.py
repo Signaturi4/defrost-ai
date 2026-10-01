@@ -22,6 +22,7 @@ import numpy as np
 from defrost_ai import conflicts, store
 from defrost_ai.retrieval import keyword, policy
 
+IDENTIFIER = re.compile(r"[a-z][A-Z]|_|[./]|\d|^[A-Z][A-Z0-9_]{3,}$")     # camelCase, snake_case, a.b, a/b, x2, CONST
 PATH_OR_CALL = re.compile(r"(?:[\w.-]+/)*[\w.-]+\.(?:py|ts|tsx|js|jsx|mjs|go|rs|rb|java|kt|swift|sh|ya?ml|toml|sql|tf)"
                           r"|[A-Za-z_][\w.]*\(\)")
 
@@ -122,24 +123,97 @@ class Memory:
         return {"query": query, "mode": asked, "mode_used": used, "k": k, "hits": hits,
                 "timing_ms": {"first_stage": round(1000 * (t1 - t0)), "rerank": round(1000 * (t2 - t1))}}
 
-    def grounding(self, sid: str, doc_path: str, n: int = 4) -> tuple[list[str], list[dict]]:
-        """Files to check an answer against: the config and code files this section links to (config first, at most
-        `n`), and the ones whose last commit is newer than the doc's, i.e. where the doc may be out of date."""
+    def grounding(self, sid: str, doc_path: str, n: int = 3) -> tuple[list[str], list[dict]]:
+        """Files to check an answer against, and the ones where the doc is likely out of date.
+
+        verify: the code and config files this section links to, at most `n`, project core and config files first
+        (if the section names no file, the files its page links to).
+        stale: a linked file counts only when its commits since the doc's last commit changed lines that contain a
+        name this section mentions. "The file was committed after the doc" alone is true for almost every hit in an
+        active repo (53% of hits on a product repo), so it is not shown."""
+        core = tuple(self.manifest.get("core") or ())
+
+        def rank(c):
+            node = self.code_nodes[c]
+            f = node.get("source_file") or ""
+            return 0 if (core and f.startswith(core)) or node.get("kind") == "config_file" else 1
+
         def files_of(sids):
             nodes = [c for x in sids for c in self.code_links.get(x, [])]
-            return list(dict.fromkeys(self.code_nodes[c]["source_file"] for c in sorted(
-                nodes, key=lambda c: self.code_nodes[c].get("kind") != "config_file")
-                if self.code_nodes[c].get("source_file")))[:n]
+            return list(dict.fromkeys(self.code_nodes[c]["source_file"] for c in sorted(nodes, key=rank)
+                                      if self.code_nodes[c].get("source_file")))[:n]
         files = files_of([sid])
         if not files:                               # section names no file: fall back to what its page links to
             files = files_of([x for (x,) in self.db.execute("SELECT id FROM sections WHERE path=? ORDER BY ordinal",
                                                              (doc_path,))])
         row = self.db.execute("SELECT time FROM docs WHERE path=?", (doc_path,)).fetchone()
         doc_t = row[0] if row and row[0] else None
-        stale = [{"file": f, "changed": time.strftime("%Y-%m-%d", time.localtime(self.file_times[f])),
-                  "doc": time.strftime("%Y-%m-%d", time.localtime(doc_t))}
-                 for f in files if doc_t and self.file_times.get(f, 0) > doc_t]
+        stale = []
+        newer = [f for f in files if doc_t and self.file_times.get(f, 0) > doc_t]
+        if newer:
+            names = self.section_names(sid)
+            for f in newer:
+                hit = sorted(n for n in names if re.search(rf"(?<![\w-]){re.escape(n)}(?![\w-])",
+                                                           self._changed_text(f, doc_t)))
+                if hit:
+                    stale.append({"file": f, "changed": time.strftime("%Y-%m-%d", time.localtime(self.file_times[f])),
+                                  "doc": time.strftime("%Y-%m-%d", time.localtime(doc_t)), "names": hit[:4]})
         return files, stale
+
+    def section_names(self, sid: str) -> set[str]:
+        """Identifiers the section uses: its linked and unresolved code mentions and its backticked spans, split into
+        parts (`a.b.c()` -> a.b.c, c; `deploy/backup.sh` -> backup.sh). Only identifier-shaped names count (camelCase,
+        snake_case, CONSTANT, a dot, slash or digit): plain words such as `deploy` or `status` occur in almost any diff."""
+        raw = [m for (m,) in self.db.execute("SELECT mention FROM links WHERE section_id=? UNION "
+                                             "SELECT mention FROM unresolved WHERE section_id=?", (sid, sid))]
+        row = self.db.execute("SELECT text FROM sections WHERE id=?", (sid,)).fetchone()
+        if row:
+            raw += re.findall(r"`([^`\n]{2,80})`", row[0])
+        out = set()
+        for m in raw:
+            for part in re.split(r"\s+", m.strip().strip("`")):
+                part = part.strip("()[]{},;:'\"").removesuffix("()").lstrip(".")
+                for name in {part, part.rsplit(".", 1)[-1], part.rsplit("/", 1)[-1]}:
+                    if len(name) >= 4 and re.fullmatch(r"[\w.$/-]+", name) and IDENTIFIER.search(name):
+                        out.add(name)
+        return out
+
+    def _changed_text(self, rel: str, since: float) -> str:
+        """Changed lines (+/-) of a file in commits after `since`, newest first, at most 30 commits / 200 KB.
+        Cached per (file, doc time): every hit of one search reuses it."""
+        key = (rel, since)
+        cache = self.__dict__.setdefault("_changed", {})
+        if key in cache:
+            return cache[key]
+        text = ""
+        for root, sub in self._repo_paths(rel):
+            try:
+                r = subprocess.run(["git", "-C", str(root), "log", "-p", "-U0", "--no-color", "--format=", "-n", "30",
+                                    f"--since={time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime(since + 1))}",
+                                    "--", sub], capture_output=True, text=True, timeout=5)
+            except (OSError, subprocess.SubprocessError):
+                continue
+            text = "\n".join(l[1:] for l in r.stdout[:200_000].splitlines()
+                             if l[:1] in "+-" and not l.startswith(("+++", "---")))
+            if r.returncode == 0:
+                break
+        cache[key] = text
+        return text
+
+    def _repo_paths(self, rel: str):
+        """(repo root, path inside it) candidates for a display path '<component>/<path>'."""
+        comp, _, sub = rel.partition("/")
+        roots = {}
+        try:
+            spec = json.loads(Path(self.workspace_file).read_text()) if self.workspace_file else {}
+            roots = {c["name"]: Path(c["path"]).expanduser() for c in spec.get("components", [])}
+        except (OSError, ValueError, KeyError):
+            pass
+        if comp in roots:
+            yield roots[comp], sub
+        for root in self.manifest.get("sources", {}):
+            if Path(root).name == comp:
+                yield Path(root), sub
 
     def missing_names(self, sid: str, doc_path: str) -> list[str]:
         """Names the section uses that do not exist in the code: a call `name()`, or a file path whose directory
@@ -159,16 +233,38 @@ class Memory:
         if calls:                                   # the AST misses some definitions (arrow consts, dynamic exports):
             found = self._in_code([c[:-2].rsplit(".", 1)[-1] for c in calls])     # a textual hit in code clears it
             out = [m for m in out if not (m.endswith("()") and m[:-2].rsplit(".", 1)[-1] in found)]
+        bare = [m for m in out if "/" not in m and not m.endswith("()")]
+        if bare:                                    # a bare `name.ext` is missing only when no tracked file has that
+            tracked = self._tracked_names()         # name and the string does not occur in source code (`Prisma.sql`
+            in_src = self._in_code(bare, source_only=True)                      # is an identifier, not a file)
+            out = [m for m in out if m not in bare or (m not in tracked and m not in in_src)]
         return out[:5]
 
-    def _in_code(self, names: list[str]) -> set[str]:
-        """Which of `names` occur as whole words in non-doc files of the indexed repos (one `git grep` per repo)."""
+    def _tracked_names(self) -> set[str]:
+        """Base names of every tracked file in the indexed repos (one `git ls-files` per repo, cached)."""
+        if "_tracked" not in self.__dict__:
+            names = set()
+            for root in self.manifest.get("sources", {}):
+                try:
+                    r = subprocess.run(["git", "-C", root, "ls-files"], capture_output=True, text=True, timeout=10)
+                    names |= {f.rsplit("/", 1)[-1] for f in r.stdout.splitlines()}
+                except (OSError, subprocess.SubprocessError):
+                    pass
+            self.__dict__["_tracked"] = names
+        return self.__dict__["_tracked"]
+
+    SOURCE_GLOBS = [f"*.{e}" for e in ("py", "ts", "tsx", "js", "jsx", "mjs", "cjs", "go", "rs", "rb", "java", "kt",
+                                       "swift", "php", "cs", "c", "cc", "cpp", "h")]
+
+    def _in_code(self, names: list[str], source_only: bool = False) -> set[str]:
+        """Which of `names` occur as whole words in non-doc files of the indexed repos (one `git grep` per repo);
+        source_only: in program source files only (not config, yaml or env files, which often keep old names)."""
         found = set()
         for root in self.manifest.get("sources", {}):
             args = ["git", "-C", root, "grep", "-h", "-o", "-w", "-I", "-F"]
             for n in names:
                 args += ["-e", n]
-            args += ["--", ".", ":!*.md", ":!*.mdx", ":!*.rst"]
+            args += ["--"] + (self.SOURCE_GLOBS if source_only else [".", ":!*.md", ":!*.mdx", ":!*.rst"])
             try:
                 r = subprocess.run(args, capture_output=True, text=True, timeout=5)
                 found |= set(r.stdout.split())
@@ -208,7 +304,8 @@ class Memory:
             body = " ".join(h["text"].split()[:words_per_hit])
             code = "".join(f"\n  -> code {c['label']} ({c['file']}{':' + c['location'] if c['location'] else ''})"
                            for c in h["code"])
-            code += "".join(f"\n  ! doc may be stale: {x['file']} changed {x['changed']}, after this doc ({x['doc']})"
+            code += "".join(f"\n  ! doc may be stale: {x['file']} changed {x['changed']}, after this doc ({x['doc']}), "
+                            f"in lines with " + ", ".join(f"`{n}`" for n in x.get("names", []))
                             for x in h.get("stale", []))
             if h.get("missing"):
                 code += "\n  ! doc/code conflict: names not found in the code: " + ", ".join(f"`{m}`" for m in h["missing"])

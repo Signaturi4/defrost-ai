@@ -259,7 +259,9 @@ Tools (MCP server `defrost`): `search`, `docs_for`, `remember`, `refresh`. Memor
 - **Answer:** for "how do I / why does / what happens when" questions, call `search` first and cite
   `path:Lstart-end`. Use grep for exact strings and code.
 {trust.RULE[level]}
-- **Doc/code conflicts are the user's call:** show both sides (doc `path:L..`, code `path:line`), ask with
+- **Doc/code conflicts are the user's call:** ask only about disagreements you verified in the code (a `! doc may be
+  stale` line alone means read the code, not ask), at most 2 questions per answer, the rest batched into one list at
+  the end. Show both sides (doc `path:L..`, code `path:line`), ask with
   AskUserQuestion ("Code is right: update the doc" / "Doc is right: the code is a bug" / "Not a conflict" / "Not
   sure"), save the answer with `remember(kind="decision")`, then act on it. Hits with `resolved:` are decided.
 - **Keep docs current:** after changing files, call `docs_for` with them and update those sections in the same

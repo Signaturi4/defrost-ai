@@ -11,7 +11,8 @@ Answer: $ARGUMENTS
    `verify in:` lines (1–3, config files first) and answer from the code. HIGH: answer from the sections; open code
    only for hits with a `!` line. Always open the files behind a `!` line.
 3. Answer briefly. Cite docs as `path:Lstart-end` and code as `path:line`.
-4. If a doc and the code disagree, do not pick a side. Show both, then ask with AskUserQuestion (header "Conflict"):
+4. If a doc and the code disagree (verified in the code; a `! doc may be stale` line alone is not a question), do not
+   pick a side. Show both, then ask with AskUserQuestion (header "Conflict"), at most 2 per answer; list the rest at the end:
    "Code is right: update the doc", "Doc is right: the code is a bug", "Not a conflict", "Not sure: mark as open".
    Save the answer with `remember(kind="decision", ...)` and act on it (change code only if the user asks).
    Hits with a `resolved:` line were already decided: follow them.
