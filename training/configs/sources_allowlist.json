@@ -1,0 +1,523 @@
+{
+ "schema": "defrost.sources/v1",
+ "about": "Every source that may enter a training stage. Anything not listed is rejected. Paths use base dirs given by the builder: {oss} = OSS clones, {prose} = book clones, {repo} = repository root. Client names and private paths are NOT in this file: they live in the git-ignored private_markers.local.json next to it.",
+ "gate": {
+  "ngram": 13,
+  "private_min": 3,
+  "eval_min": 3
+ },
+ "deny_path_patterns": [
+  "(^|/)(Desktop|Documents|Downloads)(/|$)",
+  "(^|/)Dropbox[^/]*(/|$)",
+  "(^|/)Library/Mobile Documents(/|$)",
+  "(^|/)client-memory(/|$)",
+  "(^|/)recsys-docs(/|$)",
+  "(^|/)db_schema(/|$)",
+  "Documents/Main",
+  "(^|/)\\.kev-memory(/|$)",
+  "(^|/)[^/]*-export(/|$)"
+ ],
+ "eval_suites": [
+  "{repo}/benchmarks/heldout/questions.jsonl",
+  "{repo}/benchmarks/books/questions.jsonl",
+  "{repo}/benchmarks/e2e/questions.jsonl",
+  "~/heldout-memory/text_kb.sqlite",
+  "~/books-memory/text_kb.sqlite",
+  "~/.kev-memory/parity-heldout/knowledge.sqlite",
+  "~/.kev-memory/benchmark-books/knowledge.sqlite",
+  "~/.kev-memory/e2e/knowledge.sqlite"
+ ],
+ "sources": [
+  {
+   "id": "oss:attrs",
+   "kind": "oss",
+   "role": "train",
+   "url": "https://github.com/python-attrs/attrs",
+   "revision": "8f767776326faaed11e6c2974798787f6e19b343",
+   "license": "MIT",
+   "local_dir": "{oss}/attrs",
+   "aliases": [
+    "oss/attrs",
+    "synth/attrs"
+   ],
+   "use": "docs (.md everywhere; .rst/.mdx/.txt under docs/) + code-derived API references"
+  },
+  {
+   "id": "oss:black",
+   "kind": "oss",
+   "role": "train",
+   "url": "https://github.com/psf/black",
+   "revision": "8d5a2d9f49378d7abe2eb632df1601818de8c24e",
+   "license": "MIT",
+   "local_dir": "{oss}/black",
+   "aliases": [
+    "oss/black",
+    "synth/black"
+   ],
+   "use": "docs (.md everywhere; .rst/.mdx/.txt under docs/) + code-derived API references"
+  },
+  {
+   "id": "oss:click",
+   "kind": "oss",
+   "role": "train",
+   "url": "https://github.com/pallets/click",
+   "revision": "06b2a678741131fd577ce170e23e5ca0aeba0309",
+   "license": "BSD-3-Clause",
+   "local_dir": "{oss}/click",
+   "aliases": [
+    "oss/click",
+    "synth/click"
+   ],
+   "use": "docs (.md everywhere; .rst/.mdx/.txt under docs/) + code-derived API references"
+  },
+  {
+   "id": "oss:django",
+   "kind": "oss",
+   "role": "train",
+   "url": "https://github.com/django/django",
+   "revision": "a013c821ea7838a953869615b0bdcfdb298cc09f",
+   "license": "BSD-3-Clause",
+   "local_dir": "{oss}/django",
+   "aliases": [
+    "oss/django",
+    "synth/django"
+   ],
+   "use": "docs (.md everywhere; .rst/.mdx/.txt under docs/) + code-derived API references"
+  },
+  {
+   "id": "oss:fastapi",
+   "kind": "oss",
+   "role": "train",
+   "url": "https://github.com/fastapi/fastapi",
+   "revision": "50113da16fec53b66b80d75e80a89296de4fa5a5",
+   "license": "MIT",
+   "local_dir": "{oss}/fastapi",
+   "aliases": [
+    "oss/fastapi",
+    "synth/fastapi"
+   ],
+   "use": "docs (.md everywhere; .rst/.mdx/.txt under docs/) + code-derived API references"
+  },
+  {
+   "id": "oss:flask",
+   "kind": "oss",
+   "role": "train",
+   "url": "https://github.com/pallets/flask",
+   "revision": "d73fa1cdcbd8b1465c151db8924ba58b1dd14e35",
+   "license": "BSD-3-Clause",
+   "local_dir": "{oss}/flask",
+   "aliases": [
+    "oss/flask",
+    "synth/flask"
+   ],
+   "use": "docs (.md everywhere; .rst/.mdx/.txt under docs/) + code-derived API references"
+  },
+  {
+   "id": "oss:httpx",
+   "kind": "oss",
+   "role": "train",
+   "url": "https://github.com/encode/httpx",
+   "revision": "b5addb64f0161ff6bfe94c124ef76f6a1fba5254",
+   "license": "BSD-3-Clause",
+   "local_dir": "{oss}/httpx",
+   "aliases": [
+    "oss/httpx",
+    "synth/httpx"
+   ],
+   "use": "docs (.md everywhere; .rst/.mdx/.txt under docs/) + code-derived API references"
+  },
+  {
+   "id": "oss:pydantic",
+   "kind": "oss",
+   "role": "train",
+   "url": "https://github.com/pydantic/pydantic",
+   "revision": "a9a0e1d1f7805a1b7cc5b5d42e862594a570cf74",
+   "license": "MIT",
+   "local_dir": "{oss}/pydantic",
+   "aliases": [
+    "oss/pydantic",
+    "synth/pydantic"
+   ],
+   "use": "docs (.md everywhere; .rst/.mdx/.txt under docs/) + code-derived API references"
+  },
+  {
+   "id": "oss:pytest",
+   "kind": "oss",
+   "role": "train",
+   "url": "https://github.com/pytest-dev/pytest",
+   "revision": "8721173580390a9d297e5af06cac3f0b6841f425",
+   "license": "MIT",
+   "local_dir": "{oss}/pytest",
+   "aliases": [
+    "oss/pytest",
+    "synth/pytest"
+   ],
+   "use": "docs (.md everywhere; .rst/.mdx/.txt under docs/) + code-derived API references"
+  },
+  {
+   "id": "oss:requests",
+   "kind": "oss",
+   "role": "train",
+   "url": "https://github.com/psf/requests",
+   "revision": "611c6162cbc4ac2020a2f91c7cfa4f3abf9bbb60",
+   "license": "Apache-2.0",
+   "local_dir": "{oss}/requests",
+   "aliases": [
+    "oss/requests",
+    "synth/requests"
+   ],
+   "use": "docs (.md everywhere; .rst/.mdx/.txt under docs/) + code-derived API references"
+  },
+  {
+   "id": "oss:rich",
+   "kind": "oss",
+   "role": "train",
+   "url": "https://github.com/Textualize/rich",
+   "revision": "9d8f9a372cc5916fd4781fec207ced7ddac2f08f",
+   "license": "MIT",
+   "local_dir": "{oss}/rich",
+   "aliases": [
+    "oss/rich",
+    "synth/rich"
+   ],
+   "use": "docs (.md everywhere; .rst/.mdx/.txt under docs/) + code-derived API references"
+  },
+  {
+   "id": "oss:sqlalchemy",
+   "kind": "oss",
+   "role": "train",
+   "url": "https://github.com/sqlalchemy/sqlalchemy",
+   "revision": "4d80275bd425a07be59ad41062b0d58120bd41da",
+   "license": "MIT",
+   "local_dir": "{oss}/sqlalchemy",
+   "aliases": [
+    "oss/sqlalchemy",
+    "synth/sqlalchemy"
+   ],
+   "use": "docs (.md everywhere; .rst/.mdx/.txt under docs/) + code-derived API references"
+  },
+  {
+   "id": "oss:sqlmodel",
+   "kind": "oss",
+   "role": "train",
+   "url": "https://github.com/fastapi/sqlmodel",
+   "revision": "1c46f0decb64762b4beb085e3181428921166349",
+   "license": "MIT",
+   "local_dir": "{oss}/sqlmodel",
+   "aliases": [
+    "oss/sqlmodel",
+    "synth/sqlmodel"
+   ],
+   "use": "docs (.md everywhere; .rst/.mdx/.txt under docs/) + code-derived API references"
+  },
+  {
+   "id": "oss:starlette",
+   "kind": "oss",
+   "role": "train",
+   "url": "https://github.com/encode/starlette",
+   "revision": "fada3631d80274e0f1d552490a83ca877d58ed04",
+   "license": "BSD-3-Clause",
+   "local_dir": "{oss}/starlette",
+   "aliases": [
+    "oss/starlette",
+    "synth/starlette"
+   ],
+   "use": "docs (.md everywhere; .rst/.mdx/.txt under docs/) + code-derived API references"
+  },
+  {
+   "id": "oss:typer",
+   "kind": "oss",
+   "role": "train",
+   "url": "https://github.com/fastapi/typer",
+   "revision": "a80f6e5ecd74f32b983cca336a2f3cba98d9853a",
+   "license": "MIT",
+   "local_dir": "{oss}/typer",
+   "aliases": [
+    "oss/typer",
+    "synth/typer"
+   ],
+   "use": "docs (.md everywhere; .rst/.mdx/.txt under docs/) + code-derived API references"
+  },
+  {
+   "id": "oss:jinja",
+   "kind": "oss",
+   "role": "heldout",
+   "url": "https://github.com/pallets/jinja",
+   "revision": "5ef70112a1ff19c05324ff889dd30405b1002044",
+   "license": "BSD-3-Clause",
+   "local_dir": "{oss}/jinja",
+   "aliases": [
+    "oss/jinja",
+    "synth/jinja"
+   ],
+   "use": "held-out evaluation repo: never trained on"
+  },
+  {
+   "id": "oss:marshmallow",
+   "kind": "oss",
+   "role": "heldout",
+   "url": "https://github.com/marshmallow-code/marshmallow",
+   "revision": "7f0792bd7a06f72e393ec866ac1e89e1502ccfe1",
+   "license": "MIT",
+   "local_dir": "{oss}/marshmallow",
+   "aliases": [
+    "oss/marshmallow",
+    "synth/marshmallow"
+   ],
+   "use": "held-out evaluation repo: never trained on"
+  },
+  {
+   "id": "oss:werkzeug",
+   "kind": "oss",
+   "role": "heldout",
+   "url": "https://github.com/pallets/werkzeug",
+   "revision": "fa93b5cee027bc9baadba67f21360a8a39b2317b",
+   "license": "BSD-3-Clause",
+   "local_dir": "{oss}/werkzeug",
+   "aliases": [
+    "oss/werkzeug",
+    "synth/werkzeug"
+   ],
+   "use": "held-out evaluation repo: never trained on"
+  },
+  {
+   "id": "book:rust-book",
+   "kind": "book",
+   "role": "train",
+   "url": "https://github.com/rust-lang/book",
+   "revision": "1500248d8f230566e4ec9f27fcbb8fe9e2898ab1",
+   "license": "MIT OR Apache-2.0",
+   "local_dir": "{prose}/book",
+   "aliases": [
+    "rust-book"
+   ],
+   "use": "Rerank v2 prose sections"
+  },
+  {
+   "id": "book:rust-by-example",
+   "kind": "book",
+   "role": "train",
+   "url": "https://github.com/rust-lang/rust-by-example",
+   "revision": "dcc14f912bf8790792a2df082eddc82ab2539229",
+   "license": "MIT OR Apache-2.0",
+   "local_dir": "{prose}/rust-by-example",
+   "aliases": [
+    "rust-by-example"
+   ],
+   "use": "Rerank v2 prose sections"
+  },
+  {
+   "id": "book:nomicon",
+   "kind": "book",
+   "role": "train",
+   "url": "https://github.com/rust-lang/nomicon",
+   "revision": "5791ca9f5d671328af7a8fe87b42ca90c7211d28",
+   "license": "MIT OR Apache-2.0",
+   "local_dir": "{prose}/nomicon",
+   "aliases": [
+    "nomicon"
+   ],
+   "use": "Rerank v2 prose sections"
+  },
+  {
+   "id": "book:python-guide",
+   "kind": "book",
+   "role": "train",
+   "url": "https://github.com/realpython/python-guide",
+   "revision": "a4d4fa63489b4fcce30c34a9a4aba7599969afe1",
+   "license": "CC BY-NC-SA 3.0",
+   "local_dir": "{prose}/python-guide",
+   "aliases": [
+    "python-guide"
+   ],
+   "use": "Rerank v2 prose sections",
+   "license_note": "non-commercial: review before a commercial release"
+  },
+  {
+   "id": "book:system-design-primer",
+   "kind": "book",
+   "role": "train",
+   "url": "https://github.com/donnemartin/system-design-primer",
+   "revision": "ae9bbd7b02d90b9866215de185217d33f39ab733",
+   "license": "CC BY 4.0",
+   "local_dir": "{prose}/system-design-primer",
+   "aliases": [
+    "system-design-primer"
+   ],
+   "use": "Rerank v2 prose sections"
+  },
+  {
+   "id": "book:mostly-adequate",
+   "kind": "book",
+   "role": "dev",
+   "url": "https://github.com/MostlyAdequate/mostly-adequate-guide",
+   "revision": "239468e9bc4ce1f0143722f312eb2487cac846ea",
+   "license": "CC BY-SA 4.0",
+   "local_dir": "{prose}/mostly-adequate-guide",
+   "aliases": [
+    "mostly-adequate"
+   ],
+   "use": "prose dev suite: never trained on"
+  },
+  {
+   "id": "hf:stackoverflow-ner",
+   "kind": "hf",
+   "role": "train",
+   "hf_id": "mrm8488/stackoverflow-ner",
+   "revision": "e44a22761da9acdd42b4181f33aac27a95436824",
+   "license": "unknown (no license on the dataset card)",
+   "license_verified": false,
+   "aliases": [
+    "stackoverflow-ner"
+   ],
+   "use": "corpus: train-split sentences"
+  },
+  {
+   "id": "hf:ner-re-software",
+   "kind": "hf",
+   "role": "train",
+   "hf_id": "psresearch/NER-RE-for-Software-Mentions",
+   "revision": "bc84ab9719e8cf40273a009793ae0aeb2cc7017b",
+   "license": "MIT",
+   "license_verified": true,
+   "aliases": [
+    "NER-RE-for-Software-Mentions"
+   ],
+   "use": "corpus: train-split sentences"
+  },
+  {
+   "id": "hf:peps",
+   "kind": "hf",
+   "role": "train",
+   "hf_id": "common-pile/python_enhancement_proposals_filtered",
+   "revision": "582170907dd303c207770fceacd38e6abf133edc",
+   "license": "public domain (PEPs); card lists none",
+   "license_verified": false,
+   "aliases": [
+    "peps",
+    "hf/peps"
+   ],
+   "use": "corpus: whole documents"
+  },
+  {
+   "id": "hf:stackoverflow-python",
+   "kind": "hf",
+   "role": "train",
+   "hf_id": "HuggingFaceTB/stackexchange_2025_md",
+   "revision": "fe382c48856f4eae5d8402cd4aa9be55ee1e1ee0",
+   "license": "CC BY-SA (Stack Exchange); card lists none",
+   "license_verified": false,
+   "aliases": [
+    "stackoverflow_python",
+    "hf/stackoverflow_python"
+   ],
+   "use": "corpus: python threads, score >= 2"
+  },
+  {
+   "id": "hf:csn-python",
+   "kind": "hf",
+   "role": "train",
+   "hf_id": "Nan-Do/code-search-net-python",
+   "revision": "39db91866dd0f251f3b0c7f42c0f85634101df6e",
+   "license": "Apache-2.0",
+   "license_verified": true,
+   "aliases": [
+    "csn_docstrings"
+   ],
+   "use": "corpus: train-partition docstrings"
+  },
+  {
+   "id": "hf:msmarco",
+   "kind": "hf",
+   "role": "train",
+   "hf_id": "sentence-transformers/msmarco-bm25",
+   "revision": "ce8a493a65af5e872c3c92f72a89e2e99e175f02",
+   "license": "MS MARCO terms (non-commercial research)",
+   "license_verified": false,
+   "aliases": [
+    "msmarco"
+   ],
+   "use": "Ret-B / Rerank v1 supervised rows",
+   "license_note": "non-commercial: review before a commercial release"
+  },
+  {
+   "id": "hf:nq",
+   "kind": "hf",
+   "role": "train",
+   "hf_id": "sentence-transformers/natural-questions",
+   "revision": "f9e894e1081e206e577b4eaa9ee6de2b06ae6f17",
+   "license": "CC BY-SA 3.0 (Natural Questions); card lists none",
+   "license_verified": false,
+   "aliases": [
+    "nq"
+   ],
+   "use": "Ret-B / Rerank v1 supervised rows"
+  },
+  {
+   "id": "hf:hotpotqa",
+   "kind": "hf",
+   "role": "train",
+   "hf_id": "sentence-transformers/hotpotqa",
+   "revision": "f07d3cd2d290ea2e83ed35e33d67d6a4658b8786",
+   "license": "CC BY-SA 4.0 (HotpotQA); card lists none",
+   "license_verified": false,
+   "aliases": [
+    "hotpotqa"
+   ],
+   "use": "Ret-B / Rerank v1 supervised rows"
+  },
+  {
+   "id": "hf:allnli",
+   "kind": "hf",
+   "role": "train",
+   "hf_id": "sentence-transformers/all-nli",
+   "revision": "d482672c8e74ce18da116f430137434ba2e52fab",
+   "license": "SNLI CC BY-SA 4.0 + MultiNLI mixed; card lists none",
+   "license_verified": false,
+   "aliases": [
+    "allnli"
+   ],
+   "use": "Ret-B / Rerank v1 supervised rows"
+  },
+  {
+   "id": "hf:quora",
+   "kind": "hf",
+   "role": "train",
+   "hf_id": "sentence-transformers/quora-duplicates",
+   "revision": "41f699770310302022a4dd75d4cf903bfef9ea46",
+   "license": "Quora dataset terms; card lists none",
+   "license_verified": false,
+   "aliases": [
+    "quora"
+   ],
+   "use": "Ret-B / Rerank v1 supervised rows"
+  },
+  {
+   "id": "hf:stackexchange-title-body",
+   "kind": "hf",
+   "role": "train",
+   "hf_id": "flax-sentence-embeddings/stackexchange_title_body_jsonl",
+   "revision": "a3d99bf21570ed043e19e41af46f3f19bf4e4bb6",
+   "license": "CC BY-SA (Stack Exchange); card lists none",
+   "license_verified": false,
+   "aliases": [
+    "stackexchange"
+   ],
+   "use": "Ret-B / Rerank v1 supervised rows"
+  },
+  {
+   "id": "url:scierc",
+   "kind": "url",
+   "role": "train",
+   "url": "http://nlp.cs.washington.edu/sciIE/data/sciERC_processed.tar.gz",
+   "revision": "sciERC_processed.tar.gz",
+   "sha256": "bce752fb7ebe4acf570937d76ffb27c239cfc907e477a69075dc7082d0e72e9b",
+   "license": "unknown (research release, no license file)",
+   "license_verified": false,
+   "aliases": [
+    "SciERC"
+   ],
+   "use": "corpus: train.json sentences"
+  }
+ ]
+}

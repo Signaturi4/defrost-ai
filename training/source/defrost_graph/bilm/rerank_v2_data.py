@@ -34,8 +34,9 @@ from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from defrost_graph.bilm.sup_data import (DOCS, EXCLUDE, OUT as SUP, SCHEMA, TECHDOC_INSTRUCTION, eval_grams, fts, grams13,
-                                     shingles)
+from defrost_graph.bilm import data_provenance as dp
+from defrost_graph.bilm.sup_data import (DOCS, EXCLUDE, OUT as SUP, SCHEMA, TECHDOC_INSTRUCTION, allowed_train_doc, allowlist,
+                                     eval_grams, fts, gate_and_write, grams13, shingles)
 
 OUT = Path("defrost_graph/data/rerank_v2")
 PROSE = Path("defrost_graph/data/prose")
@@ -100,6 +101,9 @@ def prose_sections():
     for book, (repo, pat, lic, role) in BOOKS.items():
         root = REPOS / repo
         commit = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+        src = allowlist().source(book, roles=("train", "dev"))
+        if commit != src["revision"] or src["role"] != role or src["license"] != lic:
+            raise dp.SourceRejected(f"{book}: clone / role / license differ from the allowlist entry {src['id']}")
         for f in sorted(root.glob(pat)):
             rel = str(f.relative_to(root))
             if SKIP_FILES.search(f.name) and not (book == "system-design-primer" and f.name == "README.md"):
@@ -108,7 +112,8 @@ def prose_sections():
             for j, (head, a, b, t) in enumerate(secs):
                 nw = len(t.split())
                 if 60 <= nw <= 400 and code_share(t) < 0.5:
-                    rows.append({"book": book, "role": role, "license": lic, "commit": commit, "path": rel,
+                    rows.append({"book": book, "source_id": src["id"], "role": role, "license": lic, "commit": commit,
+                                 "path": rel,
                                  "chapter": f"{book}/{rel}", "k": j, "heading": head, "lines": [a, b], "text": t})
     print(Counter((r["book"], r["role"]) for r in rows))
     return rows
@@ -201,11 +206,11 @@ def load_docs(need_paths):
     doc_secs, changelog, regular = defaultdict(list), defaultdict(list), defaultdict(list)
     for line in open(DOCS):
         d = json.loads(line)
-        if d.get("split") != "train" or EXCLUDE.search(d.get("project", "")) or EXCLUDE.search(d.get("path", "")):
+        if not allowed_train_doc(d) or EXCLUDE.search(d.get("project", "")) or EXCLUDE.search(d.get("path", "")):
             continue
         is_cl = bool(CHANGELOG.search(d["path"]))
         for head, _, _, t in split_doc(d["text"], d["path"].lower()):
-            rec = {"project": d["project"], "path": d["path"], "heading": head, "text": t,
+            rec = {"project": d["project"], "source_id": d["source_id"], "path": d["path"], "heading": head, "text": t,
                    "full": f"{head}\n{t}" if head else t}
             if is_cl:
                 changelog[d["project"]].append(rec)
@@ -275,7 +280,7 @@ def techdoc_groups(v1_keep, doc_secs, changelog):
         if not cl:                                      # no changelog in this project: one from any project
             cl = pick(q["question"], pos, all_cl, 1, set(sib), key="all")
         stats["sib"] += bool(sib); stats["cl"] += bool(cl); stats["n"] += 1
-        out.append({"source": "techdoc", "query": q["question"], "positive": pos,
+        out.append({"source": "techdoc", "source_id": s["source_id"], "query": q["question"], "positive": pos,
                     "cand": [[t, "sibling"] for t in sib] + [[t, "changelog"] for t in cl],
                     "fallback": [n for n in v1["negatives"] if n != pos]})
     print(f"techdoc groups {stats['n']}: with siblings {stats['sib']}, with changelog {stats['cl']}", flush=True)
@@ -293,7 +298,7 @@ def changelog_groups(changelog, regular):
         pos = s["full"]
         cl = pick(q["question"], pos, cl_text.get(s["project"], []), 4, set(), key=("p", s["project"]))
         reg = pick(q["question"], pos, reg_text.get(s["project"], []), 10, set(cl), key=("r", s["project"]))
-        out.append({"source": "changelog", "query": q["question"], "positive": pos,
+        out.append({"source": "changelog", "source_id": s["source_id"], "query": q["question"], "positive": pos,
                     "cand": [[t, "changelog"] for t in cl] + [[t, "doc"] for t in reg], "fallback": []})
     print(f"changelog-positive groups {len(out)}", flush=True)
     return out
@@ -314,7 +319,8 @@ def prose_groups():
             continue
         sib = pick(q["question"], text[i], [text[j] for j in by_ch[s["chapter"]] if j != i], MAX_SIB + 2, set())
         rest = pick(q["question"], text[i], [text[j] for j in by_book[s["book"]]], 12, set(sib), key=("b", s["book"]))
-        out.append({"source": "prose", "query": q["question"], "positive": text[i], "book": s["book"],
+        out.append({"source": "prose", "source_id": s["source_id"], "query": q["question"], "positive": text[i],
+                    "book": s["book"],
                     "cand": [[t, "sibling"] for t in sib] + [[t, "book"] for t in rest], "fallback": []})
     print(f"prose groups {len(out)}: {Counter(o['book'] for o in out)}", flush=True)
     return out
@@ -377,7 +383,8 @@ def build(seed=0, n_val_new=256):
             short[grp["source"]] += 1
             continue
         kinds_n.update(kinds)
-        kept.append({"source": grp["source"], "query": grp["query"], "positive": grp["positive"], "negatives": negs,
+        kept.append({"source": grp["source"], "source_id": grp["source_id"], "query": grp["query"],
+                     "positive": grp["positive"], "negatives": negs,
                      "kinds": kinds, "instruction": TECHDOC_INSTRUCTION})
     rng.shuffle(kept)
     new_val, new_tr = [], []
@@ -396,8 +403,10 @@ def build(seed=0, n_val_new=256):
     rng.shuffle(train)
     rng.shuffle(new_val)
     val = new_val[:n_val_new]
-    for name, part in (("rerank_train", train), ("rerank_val", val), ("rerank_val_v1", v1["val"])):
-        (OUT / f"{name}.jsonl").write_text("".join(json.dumps(r) + "\n" for r in part))
+    written = gate_and_write("rerank_v2", {str(OUT / f"{name}.jsonl"): part for name, part in
+                                           (("rerank_train", train), ("rerank_val", val), ("rerank_val_v1", v1["val"]))},
+                             inputs=[OUT / "candidates.jsonl", OUT / "candidates_keep.jsonl"])
+    train, val = list(written.values())[:2]
     meta = json.loads((OUT / "candidates_meta.json").read_text())
     manifest = {"n_train": len(train), "train_by_source": Counter(x["source"] for x in train),
                 "n_val": len(val), "val_by_source": Counter(x["source"] for x in val),

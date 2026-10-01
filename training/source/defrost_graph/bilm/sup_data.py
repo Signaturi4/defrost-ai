@@ -7,6 +7,7 @@
 Plan and rationale: docs/jev_for_graph/v2/supervised_retrieval_plan.md."""
 import hashlib
 import json
+import os
 import random
 import re
 import sqlite3
@@ -16,8 +17,10 @@ from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-DOCS = Path("defrost_graph/data/techdoc_mega/clean/docs.jsonl")
-OUT = Path("defrost_graph/data/sup_v1")
+from defrost_graph.bilm import data_provenance as dp
+
+DOCS = Path(os.environ.get("TECHDOC_MEGA") or "defrost_graph/data/techdoc_mega") / "clean/docs.jsonl"
+OUT = Path(os.environ.get("SUP_OUT") or "defrost_graph/data/sup_v1")
 EXCLUDE = re.compile(r"client|ii-|jinja|werkzeug|marshmallow|research", re.I)
 SKIP_PATH = re.compile(r"(CHANGES|CHANGELOG|HISTORY|RELEASE|AUTHORS|LICENSE|CONTRIBUTORS)", re.I)
 TECHDOC_INSTRUCTION = "Given a developer question about a software project, retrieve the documentation passage that answers it"
@@ -43,6 +46,49 @@ contents, link lists, boilerplate).
 {sections}"""
 
 
+_ALLOW = None
+
+
+def allowlist():
+    """Source allowlist + private markers (data_provenance); strict: the private markers file must exist."""
+    global _ALLOW
+    if _ALLOW is None:
+        _ALLOW = dp.Allowlist.load()
+    return _ALLOW
+
+
+def allowed_train_doc(d):
+    """A clean/docs.jsonl row may feed supervised data only if it is a train-split document of an allowlisted source
+    whose path passes the private-path guard. Rows from before the allowlist (no source_id) stop the build."""
+    if d.get("split") != "train":
+        return False
+    if "source_id" not in d:
+        raise dp.SourceRejected(f"{DOCS} predates the allowlist (no source_id): rebuild it with techdoc_corpus")
+    allowlist().source(d["source_id"])
+    allowlist().check_path(d.get("path", ""))
+    return True
+
+
+def gate_and_write(stage, parts, inputs=(), drop_eval=True):
+    """parts: {file: rows} with rows carrying source_id. One 13-gram gate over all rows (private overlap stops the
+    build; eval overlap drops the row), then each file is written with its <file>.provenance.json."""
+    a = allowlist()
+    flat = [(name, r) for name, rows in parts.items() for r in rows]
+    units = [(r["source_id"], "\n".join(str(t) for t in [r.get("query"), r.get("positive"), r.get("negative")]
+                                        + list(r.get("negatives") or []) if t)) for _, r in flat]
+    res = dp.run_gate(stage, units, a, drop_eval=drop_eval)
+    keep = set(res["kept"])
+    out = {}
+    for name in parts:
+        idx = [i for i, (n, _) in enumerate(flat) if n == name and i in keep]
+        rows = [flat[i][1] for i in idx]
+        Path(name).write_text("".join(json.dumps(r) + "\n" for r in rows))
+        dp.write_manifest(f"{stage}:{Path(name).stem}", Path(name), dp.count_units(units, idx), a, res,
+                          inputs=[p for p in inputs if Path(p).exists()])
+        out[name] = rows
+    return out
+
+
 def shingles(text, k=5):
     w = re.findall(r"\w+", text.lower())
     return {" ".join(w[i:i + k]) for i in range(max(1, len(w) - k + 1))}
@@ -59,14 +105,15 @@ def techdoc_sections():
     out = []
     for line in open(DOCS):
         d = json.loads(line)
-        if d.get("split") != "train" or EXCLUDE.search(d.get("project", "")) or EXCLUDE.search(d.get("path", "")) \
+        if not allowed_train_doc(d) or EXCLUDE.search(d.get("project", "")) or EXCLUDE.search(d.get("path", "")) \
                 or SKIP_PATH.search(d.get("path", "")):
             continue
         for _, hp, _, _, text in sections_of(d["text"], rst=d["path"].lower().endswith(".rst")):
             head = " > ".join(hp)
             nw = len(text.split())
             if 60 <= nw <= 400 and code_share(text) < 0.5:
-                out.append({"project": d["project"], "path": d["path"], "heading": head, "text": text})
+                out.append({"project": d["project"], "source_id": d["source_id"], "path": d["path"],
+                            "heading": head, "text": text})
     return out
 
 
@@ -190,6 +237,29 @@ SE_SITES = ["unix.stackexchange.com", "softwareengineering.stackexchange.com", "
             "security.stackexchange.com", "webmasters.stackexchange.com"]
 
 
+def reuse(old="defrost_graph/data/sup_v1", version=""):
+    """Carry generated questions over to a rebuilt (allowlisted) corpus without new Claude calls: a question is kept
+    when its section (path, heading, text) is unchanged in the new train split. -> OUT/techdoc_sections{version}.jsonl
+    (every eligible section of the new corpus) + OUT/techdoc_questions{version}.jsonl (re-indexed)."""
+    secs = techdoc_sections()
+    idx = {(x["path"], x["heading"], x["text"]): i for i, x in enumerate(secs)}
+    old = Path(old)
+    old_secs = [json.loads(l) for l in open(old / f"techdoc_sections{version}.jsonl")]
+    kept, by = [], Counter()
+    for line in open(old / f"techdoc_questions{version}.jsonl"):
+        q = json.loads(line)
+        x = old_secs[q["i"]]
+        j = idx.get((x["path"], x["heading"], x["text"]))
+        by["kept" if j is not None else "dropped"] += 1
+        if j is not None:
+            kept.append({**q, "i": j})
+    OUT.mkdir(parents=True, exist_ok=True)
+    (OUT / f"techdoc_sections{version}.jsonl").write_text("".join(json.dumps(x) + "\n" for x in secs))
+    (OUT / f"techdoc_questions{version}.jsonl").write_text("".join(json.dumps(q) + "\n" for q in kept))
+    print(f"reuse{version}: {len(secs)} sections, questions {dict(by)}, "
+          f"{len({q['i'] for q in kept})} sections with a question", flush=True)
+
+
 def public(seed=0):
     """-> OUT/public_raw.jsonl rows {source, query, positive, negative|None}"""
     import gzip
@@ -198,27 +268,32 @@ def public(seed=0):
     OUT.mkdir(parents=True, exist_ok=True)
     rows = []
     for src, (repo, fname, n) in PUBLIC.items():
-        files = [f for f in list_repo_files(repo, repo_type="dataset") if f.startswith(fname.split("/")[0] + "/")
-                 and f.endswith(".parquet")]
-        df = pd.read_parquet(hf_hub_download(repo, sorted(files)[0], repo_type="dataset"))
+        s = allowlist().source(src)
+        if s.get("hf_id") != repo:
+            raise dp.SourceRejected(f"{src}: {repo} is not the allowlisted dataset {s.get('hf_id')}")
+        rev = s["revision"]
+        files = [f for f in list_repo_files(repo, repo_type="dataset", revision=rev)
+                 if f.startswith(fname.split("/")[0] + "/") and f.endswith(".parquet")]
+        df = pd.read_parquet(hf_hub_download(repo, sorted(files)[0], repo_type="dataset", revision=rev))
         df = df.sample(n=min(n, len(df)), random_state=seed)
         cols = list(df.columns)
         for r in df.itertuples(index=False):
             r = dict(zip(cols, r))
             q = r.get("query") or r.get("anchor") or r.get("question")
             pos = r.get("positive") or r.get("answer")
-            rows.append({"source": src, "query": q, "positive": pos, "negative": r.get("negative")})
+            rows.append({"source": src, "source_id": s["id"], "query": q, "positive": pos, "negative": r.get("negative")})
         print(f"{src}: {n} rows ({cols})", flush=True)
     rng = random.Random(seed)
     se = []
+    se_src = allowlist().source("stackexchange")
     for site in SE_SITES:
-        path = hf_hub_download("flax-sentence-embeddings/stackexchange_title_body_jsonl", f"{site}.jsonl.gz",
-                               repo_type="dataset")
+        path = hf_hub_download(se_src["hf_id"], f"{site}.jsonl.gz", repo_type="dataset", revision=se_src["revision"])
         with gzip.open(path, "rt") as f:
             for line in f:
                 t = json.loads(line)["texts"]
                 if len(t) >= 2 and 20 <= len(t[1].split()) <= 350:
-                    se.append({"source": "stackexchange", "query": t[0], "positive": t[1], "negative": None})
+                    se.append({"source": "stackexchange", "source_id": se_src["id"], "query": t[0], "positive": t[1],
+                               "negative": None})
     rng.shuffle(se)
     rows += se[:11000]
     print(f"stackexchange: {min(11000, len(se))} of {len(se)}", flush=True)
@@ -280,6 +355,10 @@ def build(seed=0, version=""):
     rows = [json.loads(l) for l in open(OUT / "public_raw.jsonl")]
     secs = [json.loads(l) for l in open(OUT / f"techdoc_sections{version}.jsonl")]
     qs = [json.loads(l) for l in open(OUT / f"techdoc_questions{version}.jsonl")]
+    if any("source_id" not in s for s in secs):
+        raise dp.SourceRejected("techdoc sections predate the allowlist (no source_id): re-run synth on a rebuilt corpus")
+    for r in rows:
+        r.setdefault("source_id", allowlist().source(r["source"])["id"])
     stext = [f"{s['heading']}\n{s['text']}" if s["heading"] else s["text"] for s in secs]
     sdb = fts(stext)
     for q in qs:
@@ -288,8 +367,9 @@ def build(seed=0, version=""):
                             same=lambda r, p=secs[i]["project"]: secs[r]["project"] == p)
         if neg is None:
             neg = mine_negative(rng, sdb, stext, i, q["question"], stext[i])
-        rows.append({"source": "techdoc", "query": q["question"], "positive": stext[i], "negative": neg,
-                     "project": secs[i]["project"], "kind": q.get("kind", "normal")})
+        rows.append({"source": "techdoc", "source_id": secs[i]["source_id"], "query": q["question"],
+                     "positive": stext[i], "negative": neg, "project": secs[i]["project"],
+                     "kind": q.get("kind", "normal")})
     by_src = defaultdict(list)
     for r in rows:
         by_src[r["source"]].append(r)
@@ -315,8 +395,10 @@ def build(seed=0, version=""):
     rng.shuffle(kept)
     n_val = 512
     val, train = kept[:n_val], kept[n_val:]
-    for name, part in [("train", train), ("val", val)]:
-        (OUT / f"{name}{version}.jsonl").write_text("".join(json.dumps(r) + "\n" for r in part))
+    written = gate_and_write(f"retb_sup{version}", {str(OUT / f"train{version}.jsonl"): train,
+                                                     str(OUT / f"val{version}.jsonl"): val},
+                             inputs=[DOCS, OUT / "public_raw.jsonl", OUT / f"techdoc_questions{version}.jsonl"])
+    train, val = written.values()
     manifest = {"n_train": len(train), "n_val": len(val), "by_source": Counter(r["source"] for r in train),
                 "leakage_dropped": dropped, "no_negative_dropped": noneg,
                 "gate": "13-gram overlap vs held-out/client bench questions+answers, every section of both eval KBs, "
@@ -360,12 +442,15 @@ def rerank(n_neg=7, seed=0):
                     c = rng.choice(pos)
                     if c != r["positive"] and c not in negs:
                         negs.append(c)
-                out.append({"source": src, "query": r["query"], "positive": r["positive"], "negatives": negs})
+                out.append({"source": src, "source_id": r["source_id"], "query": r["query"],
+                            "positive": r["positive"], "negatives": negs})
         rng.shuffle(out)
-        (OUT / f"rerank_{split}.jsonl").write_text("".join(json.dumps(o) + "\n" for o in out))
+        out = gate_and_write(f"rerank_v1_{split}", {str(OUT / f"rerank_{split}.jsonl"): out},
+                             inputs=[OUT / f"{split}.jsonl"])[str(OUT / f"rerank_{split}.jsonl")]
         print(split, len(out), Counter(o["source"] for o in out))
 
 
 if __name__ == "__main__":
-    {"synth": synth, "synth_v2": synth_v2, "public": public, "build": build,
+    {"synth": synth, "synth_v2": synth_v2, "public": public, "build": build, "reuse": reuse,
+     "reuse_v2": lambda: reuse(version="_v2"),
      "build_v2": lambda: build(version="_v2"), "rerank": rerank}[sys.argv[1]]()

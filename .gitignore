@@ -10,3 +10,6 @@ data/
 results/private/
 docs/research/papers/
 build/
+
+# provenance guard: client names / private paths, local only
+training/configs/private_markers.local.json
