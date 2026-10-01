@@ -14,6 +14,7 @@ Model calls are serialised with one lock (one GPU / MPS device); a build holds i
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 import traceback
@@ -123,8 +124,22 @@ def make_handler(service: Service):
     return Handler
 
 
+def warm_up(service: Service) -> None:
+    """Load both models and run one tiny pass through each, so the first real query does not pay for model loading
+    and GPU kernel compilation. Holds the GPU lock, so a search that arrives meanwhile simply waits for it."""
+    try:
+        with service.gpu:
+            models = service.library.models
+            models.retriever.embed_query("warm up")
+            models.reranker.score("warm up", ["warm up section", "a second, longer warm up section of text"])
+    except Exception as e:                                       # noqa: BLE001  (no weights yet: first search loads)
+        print(f"warm-up skipped: {e}", flush=True)
+
+
 def serve(port: int = DEFAULT_PORT, host: str = "127.0.0.1"):
     service = Service()
+    if os.environ.get("KEV_MEMORY_WARMUP", "1") != "0":
+        threading.Thread(target=warm_up, args=(service,), daemon=True).start()
     server = ThreadingHTTPServer((host, port), make_handler(service))
     print(f"kev-memory service on http://{host}:{port}  (domains: {sorted(read_registry()['domains'])})", flush=True)
     server.serve_forever()
