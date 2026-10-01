@@ -94,3 +94,89 @@ def test_missing_names_flag_only_paths_and_calls():
     from kev_memory.memory import PATH_OR_CALL
     assert PATH_OR_CALL.fullmatch("deploy/old_backup.sh") and PATH_OR_CALL.fullmatch("charge_invoice()")
     assert not PATH_OR_CALL.fullmatch("APP_DOMAIN") and not PATH_OR_CALL.fullmatch("SETUP.md")
+
+
+def _graph():
+    """A small graph: core backend file with a top-level function and a class method, a frontend file, a test file."""
+    nodes = [
+        {"id": "f_jobs", "label": "jobqueue.py", "source_file": "c/backend/jobqueue.py", "component": "c"},
+        {"id": "pending", "label": "pending()", "source_file": "c/backend/jobqueue.py", "component": "c"},
+        {"id": "JobQueue", "label": "JobQueue", "source_file": "c/backend/jobqueue.py", "component": "c"},
+        {"id": "claim", "label": ".claim()", "source_file": "c/backend/jobqueue.py", "component": "c"},
+        {"id": "f_ui", "label": "form.tsx", "source_file": "c/frontend/app/form.tsx", "component": "c"},
+        {"id": "worker", "label": "worker()", "source_file": "c/frontend/app/form.tsx", "component": "c"},
+        {"id": "f_t", "label": "jobs.test.ts", "source_file": "c/frontend/test/jobs.test.ts", "component": "c"},
+        {"id": "query", "label": "query()", "source_file": "c/frontend/test/jobs.test.ts", "component": "c"},
+        {"id": "f_s", "label": "sessions.py", "source_file": "c/backend/sessions.py", "component": "c"},
+        {"id": "Session", "label": "Session", "source_file": "c/backend/sessions.py", "component": "c"},
+    ]
+    edges = [{"source": "f_jobs", "target": "pending", "relation": "contains"},
+             {"source": "f_jobs", "target": "JobQueue", "relation": "contains"},
+             {"source": "JobQueue", "target": "claim", "relation": "method"},
+             {"source": "f_ui", "target": "worker", "relation": "contains"},
+             {"source": "f_t", "target": "query", "relation": "contains"},
+             {"source": "f_s", "target": "Session", "relation": "contains"}]
+    return nodes, edges
+
+
+def _extracted(body, nodes, edges, core=None):
+    from kev_memory.ingest.links import symbol_index
+    idx = symbol_index(nodes, edges)
+    links, *_ = link_section(body, idx, {n["id"]: "c" for n in nodes}, "c", core)
+    return [(n, m) for n, m, conf, _ in links if conf == "EXTRACTED"]
+
+
+def test_bare_words_and_test_targets_do_not_link():
+    nodes, edges = _graph()
+    core = ["c/backend/"]
+    got = _extracted("Status `pending` means review; the `worker` role; `rawPost.query` column.", nodes, edges, core)
+    assert got == []                                   # status value, role, test helper: no link shown
+    got = _extracted("In `jobqueue.py`, `pending` returns the backlog.", nodes, edges, core)
+    assert ("pending", "pending") in got               # same section names the core file: the link stands
+
+
+def test_methods_index_as_class_dot_method_and_dotted_fallback_is_checked():
+    nodes, edges = _graph()
+    assert ("claim", "JobQueue.claim") in _extracted("Call `JobQueue.claim` first.", nodes, edges)
+    assert _extracted("The `data.claim` field.", nodes, edges) == []          # 'data' is not JobQueue / jobqueue
+    assert ("claim", "jobqueue.claim") in _extracted("`jobqueue.claim` locks a row.", nodes, edges)
+    assert ("Session", "Session") in _extracted("A `Session` holds cookies.", nodes, edges)  # class names stay
+
+
+def test_core_paths_detection_and_display_order():
+    from kev_memory.ingest.links import core_paths
+    nodes, edges = _graph()
+    assert core_paths({"components": []}, nodes) == ["c/backend/"]
+    assert core_paths({"components": [{"name": "c", "core": ["frontend/app"]}]}, nodes) == ["c/frontend/app/"]
+    got = _extracted("See `backend/jobqueue.py` and `JobQueue`, then `form.tsx`.", nodes, edges, ["c/backend/"])
+    assert [n for n, _ in got] == ["f_jobs", "JobQueue", "f_ui"]             # core first, path before name
+
+
+def test_doc_trust_config_round_trip_and_rule_text(tmp_path):
+    import json
+    from kev_memory import trust
+    from kev_memory.project_setup import install_memory_rule
+    ws = tmp_path / "w.workspace.json"
+    ws.write_text(json.dumps({"name": "w", "components": []}))
+    assert trust.read(ws) == "low"                     # default: code is the truth
+    trust.write(ws, "high")
+    assert trust.read(ws) == "high" and trust.read(None) == "low"
+    install_memory_rule(tmp_path, "w", "high")
+    text = (tmp_path / "CLAUDE.md").read_text()
+    assert "doc trust: high" in text and text.count("defrost-ai:memory:start") == 1
+    install_memory_rule(tmp_path, "w", "low")
+    text = (tmp_path / "CLAUDE.md").read_text()
+    assert "doc trust: low" in text and "doc trust: high" not in text
+    try:
+        trust.write(ws, "medium")
+        raise AssertionError("invalid level accepted")
+    except ValueError:
+        pass
+
+
+def test_context_starts_with_the_doc_trust_line():
+    from kev_memory.memory import Memory
+    hit = {"rank": 1, "domain": "w", "path": "w/a.md", "lines": [1, 2], "heading": "a.md > A", "text": "text",
+           "code": [], "doc_trust": "high"}
+    ctx = Memory.context({"hits": [hit]})
+    assert ctx.startswith("[w] doc trust: HIGH")

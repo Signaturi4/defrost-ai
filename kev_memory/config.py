@@ -59,12 +59,14 @@ class Component:
     exclude: set[str] = field(default_factory=set)
     role: str = ""
     text_only: bool = False
+    core: list[str] | None = None                       # code folders that are the project core (links prefer them)
     skipped: list[Path] = field(default_factory=list)
 
     @classmethod
     def from_spec(cls, spec: dict) -> "Component":
         roots = [Path(os.path.expanduser(p)).resolve() for p in spec.get("paths", [spec.get("path")]) if p]
-        return cls(spec["name"], roots, set(spec.get("exclude", [])), spec.get("role", ""), spec.get("text_only", False))
+        return cls(spec["name"], roots, set(spec.get("exclude", [])), spec.get("role", ""), spec.get("text_only", False),
+                   spec.get("core"))
 
     def files(self, suffixes: set[str], names: set[str] = frozenset()):
         """Yield (root, path) for files with one of `suffixes`, skipping SKIP_DIRS, hidden dirs and excludes.

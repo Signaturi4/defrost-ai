@@ -31,7 +31,9 @@ def build_server():
         "config files it names. Use memory_search first for 'how do I / why does / what happens when' questions, and "
         "cite the returned path:Lstart-end. Docs can be out of date: before stating how something behaves, read the "
         "files on each hit's 'verify in:' line (config files first) and always the ones marked 'doc may be stale'. "
-        "When code and doc disagree, the code wins; say which doc section is stale."))
+        "When code and doc disagree, the code wins; say which doc section is stale. Each result starts with a "
+        "'doc trust' line set by the project owner (HIGH: answer from the docs; LOW: docs are hints, answer from "
+        "the code): follow it."))
 
     @mcp.tool()
     def memory_search(query: str, domains: list[str] | None = None, mode: str = "fast", k: str = "auto") -> str:

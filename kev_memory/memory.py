@@ -62,8 +62,9 @@ class Memory:
         code = json.loads((self.out / store.CODE_GRAPH).read_text())
         self.code_nodes = {n["id"]: n for n in code["nodes"]}
         self.file_times = code.get("file_times", {})
+        self.workspace_file = self.manifest.get("workspace_file")
         self.code_links = defaultdict(list)
-        for sid, nid in self.db.execute("SELECT section_id, node_id FROM links WHERE confidence='EXTRACTED'"):
+        for sid, nid in self.db.execute("SELECT section_id, node_id FROM links WHERE confidence='EXTRACTED' ORDER BY rowid"):
             if nid in self.code_nodes:
                 self.code_links[sid].append(nid)
 
@@ -97,6 +98,8 @@ class Memory:
         t2 = time.time()
         ranked, used = policy.rank(mode, bm25, dense, scores)
         k = policy.auto_k(ranked, cos) if k == "auto" else int(k)
+        from kev_memory import trust
+        level = trust.read(self.workspace_file)                 # read per search: a changed setting applies at once
         hits = []
         for i, sid in enumerate(ranked[:k]):
             s = self.section(sid)
@@ -108,7 +111,7 @@ class Memory:
             hits.append({"rank": i + 1, "domain": self.name, "section_id": sid, "path": s["path"],
                          "lines": [s["line_start"], s["line_end"]], "heading": s["heading_path"], "text": s["text"],
                          "rerank_score": None if scores is None else scores.get(sid), "cosine": cos.get(sid),
-                         "code": code, "verify": verify, "stale": stale, "missing": missing})
+                         "code": code, "verify": verify, "stale": stale, "missing": missing, "doc_trust": level})
         return {"query": query, "mode": mode, "mode_used": used, "k": k, "hits": hits,
                 "timing_ms": {"first_stage": round(1000 * (t1 - t0)), "rerank": round(1000 * (t2 - t1))}}
 
@@ -184,7 +187,15 @@ class Memory:
     @staticmethod
     def context(result: dict, budget_tokens: int = 2000, words_per_hit: int = 300) -> str:
         """Cited context pack: one block per hit ('[n] path:Lx-y  heading' + text + linked code), ~4 chars/token."""
+        from kev_memory import trust
         parts, used = [], 0
+        levels = {}
+        for h in result["hits"]:
+            levels.setdefault(h.get("doc_trust", trust.DEFAULT), []).append(h["domain"])
+        for level, domains in levels.items():                   # what to do with these sections, set per project
+            names = ", ".join(dict.fromkeys(domains))
+            parts.append(f"[{names}] {trust.HEADER[level]}\n")
+            used += len(parts[-1]) // 4
         for h in result["hits"]:
             body = " ".join(h["text"].split()[:words_per_hit])
             code = "".join(f"\n  -> code {c['label']} ({c['file']}{':' + c['location'] if c['location'] else ''})"

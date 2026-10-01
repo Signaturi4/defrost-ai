@@ -22,7 +22,7 @@ from kev_memory import store
 from kev_memory.config import DOC_SUFFIXES, Workspace, git_head, git_times
 from kev_memory.ingest.code_graph import build_code_graph
 from kev_memory.ingest.documents import document_id, split_sections
-from kev_memory.ingest.links import link_section, symbol_index
+from kev_memory.ingest.links import core_paths, link_section, symbol_index
 from kev_memory.models.encoder import ENCODER_ID
 
 
@@ -68,7 +68,8 @@ def build(workspace: str | Path, models=None, log=print) -> dict:
     code = build_code_graph(ws, cache_root / "graphify", log)
     code["file_times"] = file_times(ws, code["nodes"])          # last commit per code/config file: staleness check
     (stage / store.CODE_GRAPH).write_text(json.dumps(code))
-    idx = symbol_index(code["nodes"])
+    idx = symbol_index(code["nodes"], code["edges"])
+    core = core_paths(ws, code["nodes"])
     component_of = {n["id"]: n["component"] for n in code["nodes"]}
 
     log("[2/4] documents -> sections -> links")
@@ -94,7 +95,7 @@ def build(workspace: str | Path, models=None, log=print) -> dict:
             stats["docs"] += 1
             for k, (level, heading, a, b, body) in enumerate(sections):
                 sid = f"{doc}_s{k}"
-                links, unresolved, n_mentions, n_resolved = link_section(body, idx, component_of, comp.name)
+                links, unresolved, n_mentions, n_resolved = link_section(body, idx, component_of, comp.name, core)
                 db.executemany("INSERT INTO links VALUES (?,?,?,?,?)", [(sid, *l) for l in links])
                 db.executemany("INSERT INTO unresolved VALUES (?,?)", [(sid, m) for m in unresolved])
                 db.execute("INSERT INTO sections VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -140,6 +141,7 @@ def build(workspace: str | Path, models=None, log=print) -> dict:
                    "doc_code_links": int(db.execute("SELECT COUNT(*) FROM links WHERE confidence='EXTRACTED'").fetchone()[0])},
         "components": {c: dict(s) for c, s in per_component.items()},
         "sources": {str(r): git_head(r) for c in ws.components for r in c.roots},
+        "core": core,
         "changed": {k: v[:200] for k, v in changed.items()} | {"n": {k: len(v) for k, v in changed.items()}},
         "doc_hashes": doc_hashes,
     }

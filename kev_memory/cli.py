@@ -3,7 +3,7 @@
   kev-memory build WORKSPACE.json [--domain NAME] [--description TEXT]   build or update (incremental) a memory
   kev-memory update DOMAIN                                               rebuild a registered domain
   kev-memory rollback DOMAIN                                             restore the previous build
-  kev-memory setup [PATH] [--on-main-merge] [--every-hours N] [--claude-hook] [--doc-rules] [--claude]
+  kev-memory setup [PATH] [--on-main-merge] [--every-hours N] [--claude-hook] [--doc-rules] [--claude] [--doc-trust high|low]
                                                                          one-shot project setup + refresh triggers
   kev-memory refresh DOMAIN [--if-changed]                               what the triggers run
   kev-memory status [DOMAIN]                                             staleness + installed triggers
@@ -52,6 +52,8 @@ def main(argv=None):
     st.add_argument("--doc-rules", action="store_true", help="add the doc-writing rules block to CLAUDE.md")
     st.add_argument("--claude", action="store_true", help="install slash commands + register the MCP server")
     st.add_argument("--remove-triggers", action="store_true")
+    st.add_argument("--doc-trust", choices=["high", "low"],
+                    help="high: docs are reliable, answer from them; low (default): docs are hints, always check code")
     rf = sub.add_parser("refresh"); rf.add_argument("domain"); rf.add_argument("--if-changed", action="store_true")
     ss = sub.add_parser("status"); ss.add_argument("domain", nargs="?")
     sub.add_parser("download-weights")
@@ -105,7 +107,7 @@ def main(argv=None):
     elif a.cmd == "setup":
         from kev_memory.project_setup import setup
         res = setup(a.path, a.domain, a.build, a.on_main_merge, a.every_hours, a.claude_hook, a.doc_rules, a.claude,
-                    a.remove_triggers)
+                    a.remove_triggers, doc_trust=a.doc_trust)
         print(json.dumps(res, indent=1, default=str))
     elif a.cmd == "refresh":
         from kev_memory.project_setup import refresh

@@ -248,17 +248,16 @@ def install_doc_rules(root: Path) -> str:
 RULE_START, RULE_END = "<!-- defrost-ai:memory:start -->", "<!-- defrost-ai:memory:end -->"
 
 
-def install_memory_rule(root: Path, name: str) -> str:
+def install_memory_rule(root: Path, name: str, doc_trust: str | None = None) -> str:
+    from kev_memory import trust
+    level = doc_trust or trust.DEFAULT
     f = root / "CLAUDE.md"
     text = f.read_text() if f.exists() else ""
     block = f"""{RULE_START}
 ## Project memory (defrost-ai)
 - **Answer:** for "how do I / why does / what happens when" questions, call `memory_search` (MCP server `defrost`,
   domain `{name}`) first, and cite `path:Lstart-end`. Use grep for exact code.
-- **Ground:** the memory returns docs, and docs go stale. Before stating how something behaves (config, deploy, CI,
-  defaults, limits), read the files on the hit's `verify in:` line. A line starting with `!` marks a doc/code conflict
-  (file changed after the doc, or names the code no longer has): read the code, trust it, and tell the user which
-  doc section is wrong under a **Doc/code conflicts** heading.
+{trust.RULE[level]}
 - **Keep docs current, on every change:** (1) before finishing, call `memory_docs_for` with the files you changed;
   (2) update those sections in the same change (rules: `docs/DOC_RULES.md` if present); (3) a new feature, command,
   env var or config key gets a section; (4) fix any doc/code conflict you found, or list it in your final message.
@@ -281,7 +280,8 @@ def remove_memory_rule(root: Path) -> None:
 
 # ---- setup ----------------------------------------------------------------------------------------------------------
 def setup(path=".", domain=None, build="now", on_main_merge=False, every_hours=None, claude_hook=False,
-          doc_rules=False, claude=False, remove=False, log=print) -> dict:
+          doc_rules=False, claude=False, remove=False, log=print, doc_trust=None) -> dict:
+    """doc_trust: "high" | "low" | None (keep the stored level; "low" for a new domain). See kev_memory/trust.py."""
     root = Path(path).expanduser().resolve()
     name = domain or root.name.lower().replace(" ", "-")
     out = {"domain": name, "path": str(root)}
@@ -291,6 +291,10 @@ def setup(path=".", domain=None, build="now", on_main_merge=False, every_hours=N
         log(f"[{name}] triggers removed")
         return out | {"removed": True}
     ws = workspace_for(root, name)
+    from kev_memory import trust
+    if doc_trust:
+        trust.write(ws, doc_trust)
+    out["doc_trust"] = level = trust.read(ws)
     from kev_memory.library import register
     register(name, ws, f"{root.name} (docs + code)")
     if claude:
@@ -298,7 +302,7 @@ def setup(path=".", domain=None, build="now", on_main_merge=False, every_hours=N
         out["claude"] = install(root)
     if doc_rules:
         out["doc_rules"] = install_doc_rules(root)
-    out["memory_rule"] = install_memory_rule(root, name)
+    out["memory_rule"] = install_memory_rule(root, name, level)
     trig = {}
     if on_main_merge:
         if git(root, "rev-parse", "--git-dir"):
