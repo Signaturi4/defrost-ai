@@ -248,32 +248,32 @@ sends your code out. This project trains small models instead (a 0.5B-parameter 
 
 ## Results
 
-All numbers are nDCG@10 or RAGAS NVIDIA metrics, with paired-bootstrap 95% CIs. Every choice was made on dev
-splits, and the test splits were scored once. A 13-gram leakage gate separates all training data from every suite.
-Full protocol: [docs/EVALUATION.md](docs/EVALUATION.md). Everything that worked and did not:
-[docs/RESULTS.md](docs/RESULTS.md).
+Every choice was made on dev splits; the test splits were scored once. Intervals are paired-bootstrap 95% CIs.
+Protocol: [docs/EVALUATION.md](docs/EVALUATION.md). Everything that worked and did not: [docs/RESULTS.md](docs/RESULTS.md).
 
-**Locked test, against a plain BM25 section index** (175 questions; held-out OSS repos + a private 7-repo product):
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/chart-e2e-dark.svg">
+  <img src="docs/img/chart-e2e-light.svg" width="100%" alt="End to end on uvicorn, cattrs and structlog, 100 questions. Answering doc section in context: stock graphify 0.06, graphify plus defrost-ai 0.94. RAGAS answer accuracy 0.22 vs 0.90, context relevance 0.52 vs 0.97, groundedness 0.28 vs 0.97.">
+</picture>
 
-| | held-out repos (106) | private product repos (69) |
+Same comparison, agent and cost ([docs/E2E_GRAPHIFY.md](docs/E2E_GRAPHIFY.md)):
+
+| | stock graphify | graphify + defrost-ai |
 |---|---|---|
-| nDCG@10, BM25 → `fast` | 0.703 → **0.840** | 0.684 → **0.835** |
-| RAGAS nv_mean (both), BM25 → `fast` (Defrost-Rerank v1) | 0.791 → **0.879** | |
-
-Defrost-Rerank v2 (default since weights v1.1.0) against v1 on the same locked test, paired: `fast` +0.024
-[+0.010, +0.041], `rerank` +0.037 [+0.019, +0.056]. The RAGAS row and the graphify comparison below were run with
-v1; they were not re-run.
-
-**End to end vs stock graphify, on three repos never used in training** (uvicorn, cattrs, structlog; 100 paired
-doc + code questions; [docs/E2E_GRAPHIFY.md](docs/E2E_GRAPHIFY.md)):
-
-| | stock graphify (paid semantic tier) | graphify + this memory |
-|---|---|---|
-| answering doc section in the context | 6% | **94%** |
-| answer quality from that context (RAGAS nv_mean) | 0.337 | **0.945** (+0.61 [+0.55, +0.66]) |
-| build cost for the 3 repos | $11.87 of Claude usage | $0, runs locally |
+| build cost for the 3 repos | $11.87 of Claude usage | **$0**, runs locally |
 | Claude Sonnet agent with file tools: accuracy | 0.906 | 0.922 (n.s.) |
 | Claude Sonnet agent: cost per question | $0.094 | **$0.071** (−25%, CI excludes 0) |
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/chart-locked-test-dark.svg">
+  <img src="docs/img/chart-locked-test-light.svg" width="100%" alt="Locked test nDCG@10. Held-out OSS repos, 106 questions: BM25 0.703, defrost-ai fast 0.840. Private product repos, 69 questions, in-domain: BM25 0.684, fast 0.835.">
+</picture>
+
+A 13-gram gate removed generated training questions that overlap an eval suite. It did not cover the unsupervised
+pretraining text: part of the private product repos' docs was in that corpus, so the private-repo numbers are
+in-domain, not held-out. The e2e repos and the held-out OSS repos were not in any training corpus we built. The e2e
+and RAGAS numbers were measured with Defrost-Rerank v1; v2 adds +0.024 [+0.010, +0.041] nDCG@10 to `fast` on the
+locked test.
 
 > [!IMPORTANT]
 > On repos this small, a strong agent with plain grep also scores 0.906 and is the cheapest arm.
@@ -282,11 +282,11 @@ doc + code questions; [docs/E2E_GRAPHIFY.md](docs/E2E_GRAPHIFY.md)):
 
 **Why not a pure knowledge graph?** The graph is reliable for structure and doc→code links, not as the place
 answers come from: instructions keep their conditions and exceptions in paragraphs. See
-[docs/DESIGN_NOTES.md](docs/DESIGN_NOTES.md), which also describes the embedding model.
+[docs/DESIGN_NOTES.md](docs/DESIGN_NOTES.md).
 
-**Known weaknesses:** the dense retriever alone loses to BM25 on private product docs; the reranker takes 6–9 s
-per query on Apple GPU; a 568M public reranker still beats ours on long narrative prose (books 0.949 vs 0.902);
-multi-hop questions are unsolved.
+**Known weaknesses:** the dense retriever alone loses to BM25 on private product docs; a reranked search takes
+about 1.7 s on an Apple M5 with MLX (2.3 s on the torch path); a 568M public reranker still beats ours on long
+narrative prose (books 0.949 vs 0.902); multi-hop questions are unsolved.
 
 ## Use cases
 
@@ -365,7 +365,7 @@ defrost_ai/        library: ingest (sections, code graph, doc->code links), mode
 integrations/      the graphify patch
 benchmarks/        frozen question suites (held-out repos, books, e2e) + the e2e harness
 training/          training scripts and configs (MNTP -> CGSA -> Defrost-Ret-B / Defrost-Rerank), Kaggle notebooks
-scripts/           parity check, benchmark source fetcher, weight export, reranker efficiency
+scripts/           parity check, benchmark source fetcher, weight export, reranker efficiency, README charts, brand assets
 docs/              EVALUATION, RESULTS, ARCHITECTURE, AGENT_LOOP, E2E_GRAPHIFY, DESIGN_NOTES, WRITING_FOR_EXTRACTION
 docs/brand/        app icon, logo, favicons, social preview (BRAND.md has the rules)
 templates/         doc-rules kit for CLAUDE.md (rules, glossary, linter, Facts extractor)

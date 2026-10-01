@@ -42,7 +42,8 @@ Qwen2.5-0.5B ─► 1 MNTP ─► 2 CGSA ─┬─► 3 Defrost-Ret-B    (dense 
 - Data: 57k (query, positive, BM25 hard negative) rows from `sup_data.py`:
   - public: MS MARCO, NQ, HotpotQA, AllNLI, Quora, StackExchange
   - tech-doc: 9.7k questions synthesized from doc sections by Claude Haiku
-- 13-gram leakage gate against every evaluation suite.
+- 13-gram leakage gate between the generated questions and every evaluation suite (the passages and the MNTP/CGSA
+  pretraining text were not gated; see docs/EVALUATION.md, Leakage).
 - Training:
   - InfoNCE, scale 20; positives and hard negatives are all-gathered across GPUs.
   - One source per step, global batch 64.

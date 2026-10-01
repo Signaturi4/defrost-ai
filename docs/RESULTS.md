@@ -196,7 +196,9 @@ RAGAS on books (nv_mean): BM25 0.872, dense 0.917, hybrid 0.923, rerank 0.908, f
 ## 8. Reliability of the numbers
 
 - **Freezing and splits.** Suites are frozen with sha256. Dev and test are split by hash, and the test was read once.
-- **Leakage.** A 13-gram leakage gate ran between all training data and every suite.
+- **Leakage.** A 13-gram gate ran between the generated training questions and every suite. The pretraining text
+  (MNTP, CGSA) and some supervised rows include part of the private product repos' docs, so the private-repo
+  results are in-domain. The held-out OSS repos, the books and the e2e repos were not in any training corpus we built.
 - **Statistics.** Paired bootstrap, 5000 resamples; confidence intervals are reported, not just means.
 - **Judge failures.** The first RAGAS test pass was **invalid**: 617 silent judge failures, scored (0, 0.5, 0.5).
   They were detected by score-tuple counts per batch and re-judged after the judge wrapper was hardened.

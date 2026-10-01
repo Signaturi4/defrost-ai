@@ -63,7 +63,7 @@ Local, code-aware memory for Claude Code and any MCP client. One install, one qu
 
 Honesty is part of the brand. Say these plainly wherever results appear:
 - On small repos, a strong agent with grep is about as accurate and is the cheapest option.
-- The reranker is slow on a laptop (6–9 s per query on Apple GPU). Speeding it up is the next milestone.
+- A reranked search takes about 1.7 s on an Apple M5 (MLX); BM25-only and hybrid searches take milliseconds.
 - Multi-hop questions are unsolved, and a larger public reranker still wins on long narrative prose.
 
 ## 4. Name and naming system

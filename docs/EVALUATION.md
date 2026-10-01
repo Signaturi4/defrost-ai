@@ -11,7 +11,10 @@ sections? That index is the baseline "Text KB" of the graphify-based memory.
   (path + line range). A retrieved section counts as relevant when it overlaps a gold span by ≥ 50%.
 - **Splits.** dev and test are split by hash. Every choice was made on dev: model, checkpoint, pool size and policy.
   The test split was scored once, after the policy was frozen and written down.
-- **Leakage.** A 13-gram gate compares all training data against every suite.
+- **Leakage.** A 13-gram gate compares the generated training questions (Defrost-Ret-B and Defrost-Rerank) with
+  every suite. The unsupervised pretraining text (MNTP, CGSA) was not gated and includes part of the private
+  product repos' docs, as do some supervised rows: the private-repo suite is in-domain, not held-out. The held-out
+  OSS repos, the books and the e2e repos were not in any training corpus we built.
 - **Statistics.** Paired bootstrap over questions, 5000 resamples. Differences are reported with 95% CIs.
 - **RAGAS.** RAGAS 0.4.3 NVIDIA metrics (answer accuracy, context relevance, response groundedness).
   Claude Sonnet answers from the top-3 sections and Claude Haiku judges. Every run is checked for silent judge

@@ -83,7 +83,7 @@ Each step: implement → profile (20 queries) → parity → nDCG gate → keep 
 | 6 | Optional lossy knobs, each measured alone: K = 30/25/20, 8-bit, max_doc 256 | step-4 time × 0.5–0.8 | nDCG paired-bootstrap CI includes 0 and the mean drop is ≤ 0.005; otherwise off |
 
 **Success criteria:** every mode returns in under 3 s at p90 on the M5, and cold start is under 10 s. On the dev
-suites (heldout, zoop, books, prose_dev), the default path's nDCG@10 stays within ±0.005 of fp32. The locked test is
+suites (heldout, private, books, prose_dev), the default path's nDCG@10 stays within ±0.005 of fp32. The locked test is
 read once, at the end.
 
 ## 5. Quality gate (defined now, not run yet)
