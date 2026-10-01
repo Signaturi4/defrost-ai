@@ -3,7 +3,9 @@
 pooled states gives the score. Trained listwise (1 positive vs 7 BM25 negatives)."""
 from __future__ import annotations
 
+import hashlib
 import os
+from collections import OrderedDict
 from pathlib import Path
 
 import numpy as np
@@ -39,6 +41,8 @@ class KevReranker:
     def __init__(self, weights: Path | None = None, device: str | None = None, max_query: int = 64, max_doc: int = 384):
         from kev_memory.models import mlx_backend
         weights = weights or models_dir()
+        self.cache_size = int(os.environ.get("KEV_RERANK_CACHE", 20000))
+        self._cache: OrderedDict = OrderedDict()
         self.device = pick_device(device)
         self.tok = load_tokenizer()
         state = torch.load(weights / "kev-rerank/head.pt", map_location="cpu")
@@ -88,12 +92,29 @@ class KevReranker:
             outs.append(self.mlx_head(backbone.mean_pool(ids.numpy(), att.numpy().astype(bool))))
         return np.array(mx.concatenate(outs), dtype=np.float32)            # one evaluation for the whole query
 
-    @torch.no_grad()
     def score(self, query: str, texts: list[str], batch_size: int | None = None) -> np.ndarray:
-        """Pairs are sorted by length and cut into batches of at most `token_budget` padded tokens, so short sections
-        are not padded to the longest one; scores come back in input order. One host sync per query."""
+        """Scores in input order. (query, section text) pairs seen before come from an LRU cache (KEV_RERANK_CACHE
+        entries, default 20000; 0 disables): the key holds the full text, so an edited section is always rescored."""
         if not texts:
             return np.zeros(0)
+        if self.cache_size <= 0:
+            return self._score(query, texts, batch_size)
+        keys = [(query, hashlib.sha1(t.encode()).digest()) for t in texts]
+        todo = [i for i, k in enumerate(keys) if k not in self._cache]
+        if todo:
+            for i, v in zip(todo, self._score(query, [texts[i] for i in todo], batch_size)):
+                self._cache[keys[i]] = float(v)
+        out = np.array([self._cache[k] for k in keys], dtype=np.float32)
+        for k in keys:
+            self._cache.move_to_end(k)
+        while len(self._cache) > self.cache_size:
+            self._cache.popitem(last=False)
+        return out
+
+    @torch.no_grad()
+    def _score(self, query: str, texts: list[str], batch_size: int | None = None) -> np.ndarray:
+        """Pairs are sorted by length and cut into batches of at most `token_budget` padded tokens, so short sections
+        are not padded to the longest one; scores come back in input order. One host sync per query."""
         seqs = self._encode_pairs(query, texts)
         order = sorted(range(len(seqs)), key=lambda i: len(seqs[i]))
         batches, cur = [], []

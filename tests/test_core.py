@@ -79,3 +79,18 @@ def test_group_hits_counts_groups_found_in_top_k():
     ranked = ["x", "a1", "y", "z", "q", "w", "b2"]
     assert group_hits(ranked, [{"a1", "a2"}, {"b1", "b2"}], 5) == 1
     assert group_hits(ranked, [{"a1", "a2"}, {"b1", "b2"}], 10) == 2
+
+
+def test_rerank_cache_scores_only_new_pairs_and_keeps_order():
+    from collections import OrderedDict
+    import numpy as np
+    import pytest
+    pytest.importorskip("torch")                           # CI runs without torch: skipped there
+    from kev_memory.models.reranker import KevReranker
+    rr = KevReranker.__new__(KevReranker)                 # no weights: the model call is replaced below
+    rr.cache_size, rr._cache, calls = 3, OrderedDict(), []
+    rr._score = lambda q, texts, batch_size=None: (calls.append(list(texts)), np.array([len(t) for t in texts], float))[1]
+    assert list(rr.score("q", ["aa", "b"])) == [2, 1]
+    assert list(rr.score("q", ["b", "ccc", "aa"])) == [1, 3, 2] and calls == [["aa", "b"], ["ccc"]]
+    rr.score("q2", ["dddd"])                               # 4 entries > cache_size 3: the oldest is evicted
+    assert len(rr._cache) == 3

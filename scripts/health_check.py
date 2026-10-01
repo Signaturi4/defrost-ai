@@ -91,12 +91,17 @@ def main():
     print(f"smoke   {len(MODES)} modes x k in (5, auto): {'ok' if not any(f.startswith('smoke') for f in fails) else 'FAIL'}")
 
     # 3. latency
+    getattr(models.reranker, "_cache", {}).clear()                   # uncached: the model really runs
     times = []
     for q in qs:
         t = time.perf_counter(); mem.search(q, mode="rerank", k=5); times.append(time.perf_counter() - t)
-    print(f"latency import {import_s:.1f}s  load retriever {load_ret:.1f}s  reranker {load_rr:.1f}s  "
+    cached = []
+    for q in qs:
+        t = time.perf_counter(); mem.search(q, mode="rerank", k=5); cached.append(time.perf_counter() - t)
+    backend = getattr(models.reranker, "backend", "torch")
+    print(f"latency [{backend}] import {import_s:.1f}s  load retriever {load_ret:.1f}s  reranker {load_rr:.1f}s  "
           f"first 3 queries {first_s:.1f}s  warm rerank median {statistics.median(times) * 1000:.0f} ms "
-          f"(max {max(times) * 1000:.0f})")
+          f"(max {max(times) * 1000:.0f})  repeated query {statistics.median(cached) * 1000:.0f} ms")
 
     # 4. service
     if a.service:
