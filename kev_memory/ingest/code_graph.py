@@ -6,7 +6,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from kev_memory.config import CODE_SUFFIXES, Workspace
+from kev_memory.config import CODE_SUFFIXES, CONFIG_NAMES, CONFIG_SUFFIXES, SECRET_LIKE, Workspace
 
 TF_BLOCK = re.compile(r'^\s*(resource|data|module|variable|output|locals|provider)\s*(?:"([^"]+)")?\s*(?:"([^"]+)")?\s*\{',
                       re.M)
@@ -77,6 +77,21 @@ def terraform(comp, root: Path, files: list[Path]):
     return nodes, resolved
 
 
+def config_nodes(comp, root: Path) -> list[dict]:
+    """One file node per config / CI / infra file (Dockerfile, compose, workflows, crontab, shell scripts, ...).
+    They carry no content in the memory; they are what doc sections link to, so an answer can be checked against
+    the file that actually runs. Secret-like files are skipped."""
+    out = []
+    for r, path in comp.files(CONFIG_SUFFIXES - {".tf"}, CONFIG_NAMES):
+        rel = path.relative_to(root).as_posix()
+        if r != root or SECRET_LIKE.search(rel):
+            continue
+        out.append({"id": f"{comp.name}_cfg_{_norm(rel)}", "label": path.name, "file_type": "config",
+                    "source_file": comp.display_path(root, path), "source_location": None, "kind": "config_file",
+                    "component": comp.name})
+    return out
+
+
 def build_code_graph(ws: Workspace, cache_dir: Path, log=print) -> dict:
     """-> {"nodes", "edges", "components": {name: stats}}; graphify's own per-file cache makes rebuilds incremental."""
     if not graphify_available():
@@ -108,6 +123,8 @@ def build_code_graph(ws: Workspace, cache_dir: Path, log=print) -> dict:
                 for n in nodes:
                     all_nodes.setdefault(n["id"], {**n, "component": comp.name})
                 all_edges += edges
+            for n in config_nodes(comp, root):
+                all_nodes.setdefault(n["id"], n)
         stats[comp.name] = {"nodes": len(all_nodes) - n0, "edges": len(all_edges) - e0}
         log(f"  code graph {comp.name}: {stats[comp.name]}")
     return {"nodes": list(all_nodes.values()), "edges": all_edges, "components": stats}

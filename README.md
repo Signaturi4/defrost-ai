@@ -137,13 +137,25 @@ Every trigger runs `kev-memory refresh <domain> --if-changed` in the background,
 not wait. Refreshes are incremental (only new or edited sections are re-embedded) and log to
 `~/.kev-memory/<domain>.refresh.log`. The memory lives in `~/.kev-memory/<domain>`, never in your repo.
 Indexing follows `.gitignore`, so ignored folders (archives, data dumps, `node_modules`) stay out.
-Setup also adds a four-line "Project memory" block to `CLAUDE.md` that tells Claude to call `memory_search` for
+Setup also adds a short "Project memory" block to `CLAUDE.md` that tells Claude to call `memory_search` for
 how/why questions. Without it, agents in our evals mostly ignored the MCP tools.
+
+**Doc trust.** `/defrost-setup` asks how far Claude should trust your docs; `--doc-trust` sets it:
+
+| setting | for | what Claude does with a hit |
+|---|---|---|
+| `low` (default; "code is the truth") | startups, code that changes daily, few docs | treats the section as a hint, reads the `verify in:` files, answers from the code and lists doc/code conflicts |
+| `high` ("docs are reliable") | legacy or well-documented projects | answers from the section; reads code only when a hit carries a `!` stale or conflict line |
+
+The setting lives in `~/.kev-memory/<domain>.workspace.json` (`"doc_trust"`). Every search result starts with
+a line that states it, and the `CLAUDE.md` block says the same. Re-run `kev-memory setup . --doc-trust high
+--build skip` to change it; no rebuild is needed. The default is `low` because a wrong answer copied from a stale
+doc is silent, while grounding costs a few file reads.
 
 The same setup without Claude:
 
 ```sh
-kev-memory setup . --build now --on-main-merge          # + --every-hours 6, --claude-hook, --doc-rules, --claude
+kev-memory setup . --build now --on-main-merge          # + --doc-trust high|low, --every-hours 6, --claude-hook, --doc-rules
 kev-memory status                                       # per domain: built_at, counts, stale (and why), triggers
 kev-memory refresh my-repo --if-changed                 # what the triggers run
 kev-memory setup . --remove-triggers                    # remove hooks, schedule and session hook
@@ -201,6 +213,26 @@ for hit in res["hits"]:
 ```
 
 Modes: `fast` (default), `rerank` (most accurate, slowest), `dense`, `bm25` (exact strings), `hybrid`, `all`.
+
+**Grounded in the code, not just the docs.** Docs go stale, so every hit carries the files to check it against:
+
+```
+[2] my-repo:docs/DEVOPS.md:L51-64  DEVOPS.md > Known problem: the CI deploy never runs
+...
+  -> code deploy.yml (my-repo/.github/workflows/deploy.yml)
+  ! doc may be stale: my-repo/.github/workflows/deploy.yml changed 2026-09-29, after this doc (2026-09-26)
+  ! doc/code conflict: names not found in the code: `scripts/old_deploy.sh`
+  verify in: my-repo/.github/workflows/deploy.yml
+```
+
+- **What gets linked:** config, CI and infra files (compose files, Dockerfiles, workflows, crontabs, shell scripts),
+  as well as code symbols. Secret-like files (`.env`, `*secret*`, keys) are never indexed.
+- **Stale docs:** a hit is flagged when a file it names was committed after the doc was.
+- **Conflicts:** a hit is flagged when the doc names a file or function that no longer exists.
+- **Claude's instructions:** the CLAUDE.md block tells Claude to read the `verify in:` files before stating how
+  something behaves, to trust the code when the two disagree, and to list the doc/code conflicts it found.
+- **Docs to update:** after a change, `memory_docs_for` (MCP) or `kev-memory docs-for <file>` lists the doc sections
+  that describe the changed files, so they are updated in the same change.
 
 FAQ / support chatbots: see [docs/FAQ_CHATBOT.md](docs/FAQ_CHATBOT.md) (use `hybrid` for real-time, about 45 ms).
 

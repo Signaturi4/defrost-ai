@@ -85,6 +85,11 @@ def search(query: str, domains=None, mode: str = "fast", k: int = 5, context: bo
                                      "merge": merge})
 
 
+def docs_for(paths: list[str], domains=None):
+    ensure_service()
+    return _call("POST", "/docs_for", {"paths": paths, "domains": domains})
+
+
 def domains():
     ensure_service()
     return _call("GET", "/domains")

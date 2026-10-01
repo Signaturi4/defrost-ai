@@ -5,7 +5,7 @@ on first use, so the models load once and are shared by all clients.
     claude mcp add defrost -- kev-memory mcp                   # Claude Code, all projects
     claude mcp add defrost -s project -- kev-memory mcp        # this project only (.mcp.json)
 
-Tools: memory_search, memory_domains, memory_init, memory_update, memory_job, memory_rollback.
+Tools: memory_search, memory_docs_for, memory_domains, memory_init, memory_update, memory_job, memory_rollback.
 graphify users get the same search tools inside graphify's own MCP server via the patch in integrations/graphify/."""
 from __future__ import annotations
 
@@ -27,14 +27,19 @@ def _k(v):
 def build_server():
     from mcp.server.fastmcp import FastMCP
     mcp = FastMCP("defrost", instructions=(
-        "Project memory: documentation sections of the registered codebases and doc folders, each with the code it "
-        "names. Use memory_search first for 'how do I / why does / what happens when' questions, and cite the "
-        "returned path:Lstart-end. Use file reading or code-graph tools for structure and call paths."))
+        "Project memory: documentation sections of the registered codebases and doc folders, each with the code and "
+        "config files it names. Use memory_search first for 'how do I / why does / what happens when' questions, and "
+        "cite the returned path:Lstart-end. Docs can be out of date: before stating how something behaves, read the "
+        "files on each hit's 'verify in:' line (config files first) and always the ones marked 'doc may be stale'. "
+        "When code and doc disagree, the code wins; say which doc section is stale. Each result starts with a "
+        "'doc trust' line set by the project owner (HIGH: answer from the docs; LOW: docs are hints, answer from "
+        "the code): follow it."))
 
     @mcp.tool()
     def memory_search(query: str, domains: list[str] | None = None, mode: str = "fast", k: str = "auto") -> str:
         """Search the project memory. Returns the documentation sections that answer the question, cited as
-        domain:path:Lstart-end, each followed by the code it names.
+        domain:path:Lstart-end, each followed by the code it names, a 'verify in:' line with the code/config files to
+        check the claim against, and a '! doc may be stale' line when such a file changed after the doc.
         mode: fast (default), rerank (most accurate, slower), dense (paraphrased how/why), bm25 (exact identifiers,
         flags, error strings), hybrid, all. k: number of sections (1-10) or "auto" (1-5 by retriever confidence).
         domains: restrict to these domains (default: KEV_MEMORY_DOMAINS or all registered)."""
@@ -43,6 +48,16 @@ def build_server():
         res = client.search(query, domains or DEFAULT_DOMAINS or None, mode, _k(k), context=True)
         ctx = res.get("context")                     # the service renders the cited context pack
         return f"mode {res['mode']} -> {res['mode_used']}, {len(res['hits'])} sections\n\n{ctx or 'no results'}"
+
+    @mcp.tool()
+    def memory_docs_for(paths: list[str], domains: list[str] | None = None) -> str:
+        """Doc sections that describe the given code or config files (repo-relative paths, e.g. "config/deploy.yml").
+        Call it after changing those files: these are the docs to review and update in the same change."""
+        hits = client.docs_for(paths, domains or DEFAULT_DOMAINS or None)
+        if not hits:
+            return "no doc section links to these files"
+        return "\n".join(f"{h['file']}: {h['domain']}:{h['path']}:L{h['lines'][0]}-{h['lines'][1]}  {h['heading']}"
+                         for h in hits)
 
     @mcp.tool()
     def memory_domains() -> str:

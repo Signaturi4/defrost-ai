@@ -112,7 +112,8 @@ def make_handler(service: Service):
                     self._send(200, {"ok": True})
                     threading.Thread(target=self.server.shutdown, daemon=True).start()
                     return
-                route = {"/search": service.search, "/update": service.update, "/rollback": service.rollback}.get(self.path)
+                route = {"/search": service.search, "/update": service.update, "/rollback": service.rollback,
+                         "/docs_for": lambda b: service.library.docs_for(b["paths"], b.get("domains"))}.get(self.path)
                 if route is None:
                     return self._send(404, {"error": "not found"})
                 self._send(200, route(body))

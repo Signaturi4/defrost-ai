@@ -1,6 +1,6 @@
 ---
 description: Set up defrost-ai project memory for this repo (asks how it should stay fresh, then builds it)
-allowed-tools: Bash(kev-memory setup:*), Bash(kev-memory status:*), Bash(git rev-parse:*), Bash(pwd), AskUserQuestion
+allowed-tools: Bash(kev-memory setup:*), Bash(kev-memory status:*), Bash(git rev-parse:*), Bash(git log:*), Bash(pwd), AskUserQuestion
 ---
 Set up the defrost-ai project memory for the current repository. Do every step below; ask the user only through
 the AskUserQuestion tool, all questions in ONE call.
@@ -15,13 +15,21 @@ the AskUserQuestion tool, all questions in ONE call.
      - "Only when I run /memory-update": no automatic trigger.
    - **"How often, if on a schedule?"** (header "Interval"): "Every 6 hours (Recommended)", "Every 2 hours",
      "Every 24 hours".
+   - **"How much should Claude trust this project's docs?"** (header "Doc trust"):
+     "Code is the truth (Recommended for startups)": docs are hints; Claude always reads the linked code before
+     answering (best when code changes daily and docs lag; costs a few file reads per question);
+     "Docs are reliable (legacy, well documented)": Claude answers from the docs and reads code only when the memory
+     flags a doc as stale or conflicting (fewer tokens; only safe when docs are kept up to date).
+     Mark "Code is the truth" as recommended unless the repo's docs are clearly maintained (e.g. most doc files were
+     changed in the last month, per `git log`); then recommend "Docs are reliable".
    - **"Add the doc-writing rules to CLAUDE.md?"** (header "Doc rules"): "Yes (Recommended)": a short highlighted
      block at the end of CLAUDE.md, with full rules in docs/DOC_RULES.md that load only when docs are written;
      "No".
 3. Build the command from the answers and run it once:
-   `kev-memory setup . --build now [--on-main-merge] [--every-hours N] [--claude-hook] [--doc-rules]`
+   `kev-memory setup . --build now --doc-trust low|high [--on-main-merge] [--every-hours N] [--claude-hook] [--doc-rules]`
    ("Build now + main" → `--on-main-merge`; "Every few hours" → `--every-hours N` from the interval answer;
-   "session starts" → `--claude-hook`; doc rules "Yes" → `--doc-rules`). Run it with the Bash timeout set to
+   "session starts" → `--claude-hook`; doc rules "Yes" → `--doc-rules`; "Code is the truth" → `--doc-trust low`,
+   "Docs are reliable" → `--doc-trust high`). Run it with the Bash timeout set to
    600000 ms: the first build loads the models and can take several minutes on a large repo; tell the user it is
    running. If it still times out, rerun with `--build background` and check `kev-memory status` later.
 4. Report: sections, code nodes and doc→code links from the build, the triggers installed, and the commands to use:

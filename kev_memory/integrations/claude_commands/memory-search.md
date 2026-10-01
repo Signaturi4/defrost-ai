@@ -7,7 +7,14 @@ Search the project memory for: $ARGUMENTS
 
 1. Call the `memory_search` MCP tool with the question (k "auto"). If the tool is not available, run
    `kev-memory search "$ARGUMENTS" -k auto`.
-2. Answer from the returned sections only. Cite each claim as `path:Lstart-end`.
-3. Name the code the sections link to (the `-> code` lines). Open a file with Read only if the sections do not
-   answer the question.
-4. If nothing relevant comes back, say so and suggest `/memory-update` or a `bm25` search with an exact identifier.
+2. Read the returned sections. They are documentation, and documentation can be out of date. The first line of the
+   result gives this project's **doc trust**: HIGH means answer from the sections and open code only for `!` lines;
+   LOW means the sections are hints and step 3 always applies.
+3. Ground the answer in the code (doc trust LOW: always; HIGH: only for `!` lines). When the question is about behaviour, configuration, deploy, CI, schedules,
+   ports, limits or defaults, open the files on the `verify in:` lines with Read (usually 1–3, config files first)
+   before answering. Always open the files behind a `!` line: `doc may be stale` (the file changed after the doc)
+   or `doc/code conflict` (the doc names files or functions the code no longer has).
+4. Answer. Cite docs as `path:Lstart-end` and code as `path:line`. When the doc and the code disagree, the code
+   wins: give the code's behaviour, and end with a **Doc/code conflicts** list (doc section, what it says, what the
+   code does), so the doc can be fixed.
+5. If nothing relevant comes back, say so and suggest `/memory-update` or a `bm25` search with an exact identifier.

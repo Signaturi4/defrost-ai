@@ -68,6 +68,11 @@ class Library:
                 self._memories[name] = Memory(out, self.models, name)
             return self._memories[name]
 
+    def docs_for(self, paths: list[str], domains: list[str] | None = None) -> list[dict]:
+        """Doc sections, across domains, that link to any of `paths` (code or config files). No model is loaded."""
+        names = domains or [n for n, d in self.domains().items() if d["built"]]
+        return [h | {"file": p} for n in names for p in paths for h in self.memory(n).docs_for(p)]
+
     def search(self, query: str, domains: list[str] | None = None, mode: str = "fast", k: int | str = 5,
                merge: str = "rerank") -> dict:
         names = domains or [n for n, d in self.domains().items() if d["built"]]

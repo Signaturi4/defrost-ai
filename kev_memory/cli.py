@@ -3,7 +3,7 @@
   kev-memory build WORKSPACE.json [--domain NAME] [--description TEXT]   build or update (incremental) a memory
   kev-memory update DOMAIN                                               rebuild a registered domain
   kev-memory rollback DOMAIN                                             restore the previous build
-  kev-memory setup [PATH] [--on-main-merge] [--every-hours N] [--claude-hook] [--doc-rules] [--claude]
+  kev-memory setup [PATH] [--on-main-merge] [--every-hours N] [--claude-hook] [--doc-rules] [--claude] [--doc-trust high|low]
                                                                          one-shot project setup + refresh triggers
   kev-memory refresh DOMAIN [--if-changed]                               what the triggers run
   kev-memory status [DOMAIN]                                             staleness + installed triggers
@@ -12,6 +12,7 @@
   kev-memory claude install [DIR] [--user]                               slash commands + `claude mcp add defrost`
   kev-memory domains                                                     list registered domains
   kev-memory search "question" [--domain D ...] [--mode fast] [-k 5] [--json]
+  kev-memory docs-for config/deploy.yml [...]                           doc sections to review after editing these files
   kev-memory serve [--port 8765]                                         resident HTTP service
   kev-memory benchmark --suite FILE.jsonl --memory DIR [--split dev]
   kev-memory verify-weights                                              check model files against MANIFEST.json"""
@@ -31,6 +32,8 @@ def main(argv=None):
     u = sub.add_parser("update"); u.add_argument("domain")
     r = sub.add_parser("rollback"); r.add_argument("domain")
     sub.add_parser("domains")
+    df = sub.add_parser("docs-for", help="doc sections that describe these code/config files (review after editing)")
+    df.add_argument("paths", nargs="+"); df.add_argument("--domain", action="append")
     s = sub.add_parser("search"); s.add_argument("query"); s.add_argument("--domain", action="append")
     s.add_argument("--mode", default="fast"); s.add_argument("-k", type=lambda v: v if v == "auto" else int(v), default=5,
                    help='number of sections, or "auto" (adaptive, 1-5)'); s.add_argument("--json", action="store_true")
@@ -50,6 +53,8 @@ def main(argv=None):
     st.add_argument("--doc-rules", action="store_true", help="add the doc-writing rules block to CLAUDE.md")
     st.add_argument("--claude", action="store_true", help="install slash commands + register the MCP server")
     st.add_argument("--remove-triggers", action="store_true")
+    st.add_argument("--doc-trust", choices=["high", "low"],
+                    help="high: docs are reliable, answer from them; low (default): docs are hints, always check code")
     rf = sub.add_parser("refresh"); rf.add_argument("domain"); rf.add_argument("--if-changed", action="store_true")
     ss = sub.add_parser("status"); ss.add_argument("domain", nargs="?")
     sub.add_parser("download-weights")
@@ -79,6 +84,13 @@ def main(argv=None):
     elif a.cmd == "domains":
         from kev_memory.library import Library
         print(json.dumps(Library().domains(), indent=1))
+    elif a.cmd == "docs-for":
+        from kev_memory.library import Library
+        hits = Library().docs_for(a.paths, a.domain)
+        for h in hits:
+            print(f"{h['file']}: {h['domain']}:{h['path']}:L{h['lines'][0]}-{h['lines'][1]}  {h['heading']}")
+        if not hits:
+            print("no doc section links to these files")
     elif a.cmd == "search":
         from kev_memory.memory import Memory
         if a.local:                                      # load the models in this process (slow: every call)
@@ -101,7 +113,7 @@ def main(argv=None):
     elif a.cmd == "setup":
         from kev_memory.project_setup import setup
         res = setup(a.path, a.domain, a.build, a.on_main_merge, a.every_hours, a.claude_hook, a.doc_rules, a.claude,
-                    a.remove_triggers)
+                    a.remove_triggers, doc_trust=a.doc_trust)
         print(json.dumps(res, indent=1, default=str))
     elif a.cmd == "refresh":
         from kev_memory.project_setup import refresh
