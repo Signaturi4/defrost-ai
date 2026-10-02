@@ -28,6 +28,10 @@ def install(project: Path | None = None, user: bool = False, register_mcp: bool 
             old.unlink()
             done.append(f"removed retired command {old}")
     if register_mcp:
+        from defrost_ai.service.mcp_server import mcp_available
+        if not mcp_available():                            # registering anyway: it works once the extra is added
+            done.append("WARNING: the `mcp` extra is missing, so the MCP server will not start "
+                        "(Claude shows 'connection closed'). Run `defrost mcp` for the fix.")
         exe = shutil.which("defrost")
         cmd = [exe, "mcp"] if exe else [sys.executable, "-m", "defrost_ai.service.mcp_server"]
         scope = "user" if user else "project"

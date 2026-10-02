@@ -2,6 +2,8 @@
 
 ## 1.2.0 (unreleased)
 
+- **Missing `mcp` extra is reported, not hidden:** `defrost mcp` exits with the reinstall command instead of a
+  traceback that MCP clients only show as "connection closed"; `defrost status` and Claude registration warn too.
 - **Rename:** the package is `defrost-ai` (import `defrost_ai`), the CLI is `defrost`, and the models are
   Defrost-Ret-B and Defrost-Rerank v2. `kev-memory`, `KEV_*` variables and `~/.kev-memory` keep working until 1.3.
 - **Simpler surface:**

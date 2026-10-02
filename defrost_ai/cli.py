@@ -496,6 +496,14 @@ def cmd_status(a):
             print(f"  notes and decisions: {(n.get('counts') or {}).get('docs', 0)} files")
     print(f"\nsearch mode {settings.get('search.mode')} | backend {_backend()} | settings: defrost config")
     print(_weights_line())
+    print(_mcp_line())
+
+
+def _mcp_line() -> str:
+    from defrost_ai.service.mcp_server import mcp_available
+    if mcp_available():
+        return "MCP server: ready (`defrost mcp`)"
+    return "MCP server: NOT available, the `mcp` extra is missing (run `defrost mcp` for the fix)"
 
 
 def _backend() -> str:

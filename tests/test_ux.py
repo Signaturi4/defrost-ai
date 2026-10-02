@@ -80,6 +80,29 @@ def test_mcp_server_has_four_tools():
     assert sorted(t.name for t in tools) == ["docs_for", "refresh", "remember", "search"]
 
 
+def test_mcp_without_the_extra_explains_instead_of_crashing(monkeypatch, capsys):
+    from defrost_ai.service import mcp_server
+    monkeypatch.setattr(mcp_server, "mcp_available", lambda: False)
+    with pytest.raises(SystemExit) as e:
+        mcp_server.main()
+    assert e.value.code == 1
+    err = capsys.readouterr().err
+    assert "`mcp` package" in err and "defrost-ai[mcp]" in err and "connection closed" in err
+
+
+def test_status_and_claude_install_flag_a_missing_mcp_extra(monkeypatch, capsys, tmp_path):
+    from defrost_ai import cli, project_setup
+    from defrost_ai.integrations import claude
+    from defrost_ai.service import mcp_server
+    monkeypatch.setattr(mcp_server, "mcp_available", lambda: False)
+    monkeypatch.setattr(project_setup, "status", lambda *a, **k: [])
+    cli.main(["status"])
+    assert "MCP server: NOT available" in capsys.readouterr().out
+    monkeypatch.setattr(claude.shutil, "which", lambda name: None)       # no claude CLI: nothing is registered
+    done = claude.install(tmp_path, register_mcp=True)
+    assert any(d.startswith("WARNING: the `mcp` extra is missing") for d in done)
+
+
 def test_doc_plan_skips_paths_the_index_excludes(tmp_path, monkeypatch):
     from defrost_ai import docsync
     monkeypatch.setenv("DEFROST_HOME", str(tmp_path))

@@ -12,8 +12,10 @@ models load once and are shared by all clients.
     claude mcp add defrost -s project -- defrost mcp        # this project only (.mcp.json)"""
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
+import sys
 from pathlib import Path
 
 from defrost_ai import conflicts
@@ -156,7 +158,22 @@ def _wait(job_id: str, domain: str) -> str:
                        "changed": m.get("changed", {}).get("n")}, indent=1)
 
 
+MISSING_MCP = ("defrost: the MCP server needs the optional `mcp` package, which is not installed in "
+               f"{sys.prefix}.\nMCP clients only report this as 'connection closed'. Reinstall with the mcp extra:\n"
+               "  curl -fsSL https://raw.githubusercontent.com/Signaturi4/defrost-ai/main/install.sh | sh\n"
+               "  or: uv tool install --reinstall \"defrost-ai[code,mcp,mac] @ <source>\"\n"
+               "  or: pip install \"defrost-ai[mcp]\"")
+
+
+def mcp_available() -> bool:
+    """True when the optional `mcp` extra is importable; the server cannot start without it."""
+    return importlib.util.find_spec("mcp") is not None
+
+
 def main():
+    if not mcp_available():
+        print(MISSING_MCP, file=sys.stderr)              # stderr reaches the client's MCP log, not the protocol
+        sys.exit(1)
     build_server().run()
 
 
