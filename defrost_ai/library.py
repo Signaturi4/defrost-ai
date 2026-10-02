@@ -117,8 +117,13 @@ class Library:
             for h, s in zip(hits, scores):
                 h["merge_score"] = float(s)
             hits.sort(key=lambda h: -h["merge_score"])
-        else:
-            hits.sort(key=lambda h: h["rank"])
+        else:                                        # no reranker: merge the per-domain lists by cosine (one embedding
+            for r in results:                        # model, so comparable across domains), kept monotone within a
+                floor = float("inf")                 # domain so its own hybrid order is preserved
+                for h in r["hits"]:
+                    floor = min(floor, h.get("cosine") or 0.0)
+                    h["merge_score"] = floor
+            hits.sort(key=lambda h: (-h["merge_score"], h["rank"]))
         for i, h in enumerate(hits[:k]):
             h["rank"] = i + 1
         return {"query": query, "mode": mode, "domains": names, "merge": merge, "k": k, "hits": hits[:k],
