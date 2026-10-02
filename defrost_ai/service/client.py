@@ -86,7 +86,9 @@ def ensure_service(wait: float = 120) -> None:
     health = _health()
     if health and health.get("ok"):
         same_code = health.get("build") == build_id()
-        other_install = health.get("install") not in (None, auth.install_path())
+        running = health.get("install")
+        other_install = (running not in (None, auth.install_path())
+                         and os.path.isdir(running))          # gone = this install, reinstalled (e.g. new Python)
         if same_code or other_install or os.environ.get("DEFROST_SERVE_CMD"):
             return
         try:                                            # our install, upgraded: restart the old service

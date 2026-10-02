@@ -10,6 +10,8 @@
   silently where defrost is not installed, so the file can be committed for teammates.
 - **A stale memory no longer breaks search:** a registered memory whose workspace file was deleted is listed as not
   built (with the reason) instead of failing `defrost search` across all memories with HTTP 500.
+- **Upgrades restart the service after a Python change:** a running service whose install directory no longer exists
+  (reinstalled under another Python) is restarted instead of being kept as "another installation" running old code.
 - **Rename:** the package is `defrost-ai` (import `defrost_ai`), the CLI is `defrost`, and the models are
   Defrost-Ret-B and Defrost-Rerank v2. `kev-memory`, `KEV_*` variables and `~/.kev-memory` keep working until 1.3.
 - **Simpler surface:**

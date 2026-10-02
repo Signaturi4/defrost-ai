@@ -134,3 +134,26 @@ def test_build_does_not_block_search_and_same_domain_builds_queue(home, monkeypa
         assert starts[1] >= ends[0]                           # same domain: the second build waited for the first
     finally:
         server.shutdown()
+
+
+def test_service_of_a_replaced_install_is_restarted_but_a_live_other_install_is_not(home, tmp_path, monkeypatch):
+    """Reinstalling under another Python moves the package path; the old service must not pass for another install."""
+    from defrost_ai.service import client
+    calls = []
+    monkeypatch.setattr(client, "_call", lambda method, path, *a, **k: calls.append(path))
+    monkeypatch.setattr(client, "alive", lambda: False)
+    monkeypatch.setattr(client, "_token", lambda: "tok")
+    monkeypatch.setattr(client.subprocess, "Popen", lambda *a, **k: calls.append("popen"))
+    monkeypatch.delenv("DEFROST_SERVE_CMD", raising=False)
+
+    monkeypatch.setattr(client, "_health", lambda: {"ok": True, "build": "old", "install": str(tmp_path / "gone")})
+    with pytest.raises(RuntimeError):                    # alive() stays False here, so the new start "times out"
+        client.ensure_service(wait=0)
+    assert calls[:1] == ["/shutdown"] and "popen" in calls
+
+    calls.clear()
+    other = tmp_path / "other-venv"
+    other.mkdir()
+    monkeypatch.setattr(client, "_health", lambda: {"ok": True, "build": "old", "install": str(other)})
+    client.ensure_service(wait=0)
+    assert calls == []
