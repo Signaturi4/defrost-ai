@@ -127,6 +127,11 @@ defrost setup --remove                               # remove every hook and sch
 
 Upgrade: run the install line again (the resident service restarts itself on the new build).
 
+**Teammates.** Commit what setup adds (`CLAUDE.md`, `.claude/settings.json`, `docs/`). The Claude hooks call
+`defrost` from `PATH` and do nothing where defrost is not installed, so a fresh clone works in Claude Code right away.
+Each teammate then runs the install line once and `defrost setup --yes --domain <name>` in their clone: the index and
+the git hooks are per machine and never committed.
+
 ## Search modes
 
 There are two. Pick per question, or set your default once.

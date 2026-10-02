@@ -80,17 +80,17 @@ def test_mcp_server_has_four_tools():
     assert sorted(t.name for t in tools) == ["docs_for", "refresh", "remember", "search"]
 
 
-def test_mcp_without_the_extra_explains_instead_of_crashing(monkeypatch, capsys):
+def test_mcp_without_the_package_explains_instead_of_crashing(monkeypatch, capsys):
     from defrost_ai.service import mcp_server
     monkeypatch.setattr(mcp_server, "mcp_available", lambda: False)
     with pytest.raises(SystemExit) as e:
         mcp_server.main()
     assert e.value.code == 1
     err = capsys.readouterr().err
-    assert "`mcp` package" in err and "defrost-ai[mcp]" in err and "connection closed" in err
+    assert "`mcp` package" in err and "install.sh" in err and "connection closed" in err
 
 
-def test_status_and_claude_install_flag_a_missing_mcp_extra(monkeypatch, capsys, tmp_path):
+def test_status_and_claude_install_flag_a_missing_mcp_package(monkeypatch, capsys, tmp_path):
     from defrost_ai import cli, project_setup
     from defrost_ai.integrations import claude
     from defrost_ai.service import mcp_server
@@ -100,7 +100,7 @@ def test_status_and_claude_install_flag_a_missing_mcp_extra(monkeypatch, capsys,
     assert "MCP server: NOT available" in capsys.readouterr().out
     monkeypatch.setattr(claude.shutil, "which", lambda name: None)       # no claude CLI: nothing is registered
     done = claude.install(tmp_path, register_mcp=True)
-    assert any(d.startswith("WARNING: the `mcp` extra is missing") for d in done)
+    assert any(d.startswith("WARNING: the `mcp` package is missing") for d in done)
 
 
 def test_doc_plan_skips_paths_the_index_excludes(tmp_path, monkeypatch):
@@ -133,3 +133,37 @@ def test_status_survives_a_deleted_workspace(tmp_path, monkeypatch):
         {"domains": {"gone": {"workspace": str(tmp_path / "gone.workspace.json")}}}))
     rows = project_setup.status()
     assert rows[0]["domain"] == "gone" and rows[0]["stale"] and "missing" in rows[0]["why"]
+
+
+def test_mcp_is_a_core_dependency_and_the_old_extra_still_resolves():
+    import tomllib
+    from pathlib import Path
+    project = tomllib.loads((Path(__file__).parents[1] / "pyproject.toml").read_text())["project"]
+    assert any(d.replace(" ", "").startswith("mcp>=") for d in project["dependencies"])
+    assert project["optional-dependencies"]["mcp"] == []          # `defrost-ai[mcp]` keeps resolving
+
+
+def test_claude_hooks_are_portable_for_teammates(tmp_path, monkeypatch):
+    """The committed .claude/settings.json must not carry this machine's path, must be a no-op where defrost is not
+    installed, and must pass the hook's exit code through where it is (exit 2 = the docs gate holds a commit)."""
+    import os
+    import subprocess
+    from pathlib import Path
+    from defrost_ai import compact_handoff, docsync, notes
+    monkeypatch.setattr(docsync, "git", lambda root, *a: str(tmp_path / ".git" / "hooks"))
+    notes.install_hook(tmp_path)
+    compact_handoff.install_hook(tmp_path)
+    docsync.install_hooks(tmp_path, gate=True)
+    text = (tmp_path / ".claude/settings.json").read_text()
+    assert str(Path.home()) not in text and "/.local/bin" not in text
+    cmds = [h["command"] for es in json.loads(text)["hooks"].values() for e in es for h in e["hooks"]]
+    assert len(cmds) == 5 and all(c.startswith("if command -v defrost") for c in cmds)
+
+    stop = next(c for c in cmds if "hook stop" in c)
+    no_defrost = {"PATH": "/usr/bin:/bin"}
+    assert subprocess.run(["sh", "-c", stop], env=no_defrost).returncode == 0
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    (fake / "defrost").write_text("#!/bin/sh\nexit 2\n")
+    (fake / "defrost").chmod(0o755)
+    assert subprocess.run(["sh", "-c", stop], env={"PATH": f"{fake}{os.pathsep}/usr/bin:/bin"}).returncode == 2

@@ -158,15 +158,16 @@ def _wait(job_id: str, domain: str) -> str:
                        "changed": m.get("changed", {}).get("n")}, indent=1)
 
 
-MISSING_MCP = ("defrost: the MCP server needs the optional `mcp` package, which is not installed in "
-               f"{sys.prefix}.\nMCP clients only report this as 'connection closed'. Reinstall with the mcp extra:\n"
+MISSING_MCP = ("defrost: the MCP server needs the `mcp` package, which is not installed in "
+               f"{sys.prefix}.\nMCP clients only report this as 'connection closed'. Reinstall defrost-ai:\n"
                "  curl -fsSL https://raw.githubusercontent.com/Signaturi4/defrost-ai/main/install.sh | sh\n"
-               "  or: uv tool install --reinstall \"defrost-ai[code,mcp,mac] @ <source>\"\n"
-               "  or: pip install \"defrost-ai[mcp]\"")
+               "  or: uv tool install --reinstall \"defrost-ai[code,mac] @ <source>\"\n"
+               "  or: pip install \"mcp>=1.2,<2\" (into this environment)")
 
 
 def mcp_available() -> bool:
-    """True when the optional `mcp` extra is importable; the server cannot start without it."""
+    """True when `mcp` is importable. It is a core dependency, but a hand-built or partial environment can still lack it,
+    and the server cannot start without it."""
     return importlib.util.find_spec("mcp") is not None
 
 

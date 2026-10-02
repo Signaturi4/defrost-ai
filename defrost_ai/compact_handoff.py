@@ -90,14 +90,13 @@ def run(payload: dict) -> Path | None:
 
 
 def install_hook(root: Path) -> str:
-    import shutil
+    from defrost_ai.notes import claude_hook_command
     f = root / ".claude/settings.json"
     f.parent.mkdir(parents=True, exist_ok=True)
     settings = json.loads(f.read_text()) if f.exists() and f.read_text().strip() else {}
     hooks = settings.setdefault("hooks", {})
-    exe = shutil.which("defrost") or "defrost"
     hooks["PreCompact"] = [h for h in hooks.get("PreCompact", []) if HOOK_TAG not in json.dumps(h)] + [
-        {"hooks": [{"type": "command", "command": f"{exe} hook pre-compact  # {HOOK_TAG}"}]}]
+        {"hooks": [{"type": "command", "command": claude_hook_command("hook pre-compact", HOOK_TAG)}]}]
     f.write_text(json.dumps(settings, indent=2) + "\n")
     return str(f)
 

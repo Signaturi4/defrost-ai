@@ -151,17 +151,21 @@ def index(domain: str, wait: bool = False) -> dict:
 
 
 # ---- Claude Code wiring (project level only) -------------------------------------------------------------------
+def claude_hook_command(args: str, tag: str) -> str:
+    """Hook command for the committed .claude/settings.json: `defrost` from PATH (no machine-specific path), and a
+    no-op when a teammate has not installed defrost yet. The hook's own exit code passes through when it runs."""
+    return f"if command -v defrost >/dev/null 2>&1; then defrost {args}; fi  # {tag}"
+
+
 def install_hook(root: Path) -> str:
     """Project .claude/settings.json: after /clear or a compaction, print the latest brief into the new context."""
-    import shutil
     f = root / ".claude/settings.json"
     f.parent.mkdir(parents=True, exist_ok=True)
     settings = json.loads(f.read_text()) if f.exists() and f.read_text().strip() else {}
     hooks = settings.setdefault("hooks", {})
     starts = [h for h in hooks.get("SessionStart", []) if HOOK_TAG not in json.dumps(h)]
-    exe = shutil.which("defrost") or "defrost"
     starts.append({"matcher": "clear|compact",
-                   "hooks": [{"type": "command", "command": f"{exe} hook brief  # {HOOK_TAG}"}]})
+                   "hooks": [{"type": "command", "command": claude_hook_command("hook brief", HOOK_TAG)}]})
     hooks["SessionStart"] = starts
     f.write_text(json.dumps(settings, indent=2) + "\n")
     return str(f)

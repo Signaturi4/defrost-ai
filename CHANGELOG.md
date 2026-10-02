@@ -2,8 +2,14 @@
 
 ## 1.2.0 (unreleased)
 
-- **Missing `mcp` extra is reported, not hidden:** `defrost mcp` exits with the reinstall command instead of a
-  traceback that MCP clients only show as "connection closed"; `defrost status` and Claude registration warn too.
+- **`mcp` is a core dependency:** the MCP server installs with defrost-ai; the `[mcp]` extra is kept, empty, so
+  existing install commands still resolve. If an environment still lacks it, `defrost mcp` exits with the reinstall
+  command instead of a traceback that MCP clients only show as "connection closed"; `defrost status` and Claude
+  registration warn too.
+- **Portable Claude hooks:** `.claude/settings.json` calls `defrost` from `PATH` (no machine-specific path) and skips
+  silently where defrost is not installed, so the file can be committed for teammates.
+- **A stale memory no longer breaks search:** a registered memory whose workspace file was deleted is listed as not
+  built (with the reason) instead of failing `defrost search` across all memories with HTTP 500.
 - **Rename:** the package is `defrost-ai` (import `defrost_ai`), the CLI is `defrost`, and the models are
   Defrost-Ret-B and Defrost-Rerank v2. `kev-memory`, `KEV_*` variables and `~/.kev-memory` keep working until 1.3.
 - **Simpler surface:**

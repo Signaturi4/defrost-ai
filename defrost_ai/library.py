@@ -58,7 +58,12 @@ class Library:
     def domains(self) -> dict:
         out = {}
         for name, d in read_registry()["domains"].items():
-            ws = Workspace.load(d["workspace"])
+            try:
+                ws = Workspace.load(d["workspace"])
+            except (OSError, ValueError, KeyError) as e:   # stale registration (workspace deleted): skip it, don't fail all
+                out[name] = {"description": d.get("description", ""), "workspace": d["workspace"], "out": None,
+                             "built": False, "built_at": None, "counts": None, "error": str(e)}
+                continue
             manifest = ws.out / "manifest.json"
             meta = json.loads(manifest.read_text()) if manifest.exists() else {}
             out[name] = {"description": d.get("description", ""), "workspace": d["workspace"], "out": str(ws.out),

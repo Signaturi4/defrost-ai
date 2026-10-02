@@ -503,7 +503,7 @@ def _mcp_line() -> str:
     from defrost_ai.service.mcp_server import mcp_available
     if mcp_available():
         return "MCP server: ready (`defrost mcp`)"
-    return "MCP server: NOT available, the `mcp` extra is missing (run `defrost mcp` for the fix)"
+    return "MCP server: NOT available, the `mcp` package is missing (run `defrost mcp` for the fix)"
 
 
 def _backend() -> str:
