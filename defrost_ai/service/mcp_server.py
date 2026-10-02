@@ -12,16 +12,44 @@ models load once and are shared by all clients.
     claude mcp add defrost -s project -- defrost mcp        # this project only (.mcp.json)"""
 from __future__ import annotations
 
+import functools
 import importlib.util
 import json
 import os
 import sys
 from pathlib import Path
 
+import defrost_ai
 from defrost_ai import conflicts
 from defrost_ai.service import client
 
 DEFAULT_DOMAINS = [d for d in os.environ.get("DEFROST_DOMAINS", "").split(",") if d]
+
+# The package folder this server process loaded its code from. Tools import modules lazily, so after a reinstall that
+# moves the install (e.g. another Python version: lib/python3.13 -> lib/python3.12) a long-lived server fails with a
+# confusing "cannot import name ..." on its next call. It cannot reload itself: the MCP client must restart it.
+INSTALL_DIR = Path(defrost_ai.__file__).resolve().parent
+REPLACED = ("defrost was reinstalled or upgraded while this MCP server was running ({where}), so it can no longer load "
+            "its own code. Reconnect it: in Claude Code run /mcp, select defrost, Reconnect (or restart the session). "
+            "Tell the user; do not retry this call.")
+
+
+def install_replaced() -> bool:
+    """True when the package folder this process started from is gone (reinstalled, upgraded or uninstalled)."""
+    return not INSTALL_DIR.is_dir()
+
+
+def _guarded(fn):
+    """Answer with REPLACED instead of an import error when the install changed under this running server."""
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        if install_replaced():
+            return REPLACED.format(where=f"{INSTALL_DIR} no longer exists")
+        try:
+            return fn(*args, **kwargs)
+        except ImportError as e:
+            return REPLACED.format(where=f"import failed: {e}")
+    return wrapper
 
 
 def _k(v):
@@ -57,6 +85,7 @@ def build_server():
         + conflicts.QUESTION))
 
     @mcp.tool()
+    @_guarded
     def search(question: str, mode: str | None = None, k: str = "auto", domains: list[str] | None = None) -> str:
         """Find the documentation sections that answer a question. Each hit is cited as domain:path:Lstart-end and is
         followed by the code it names, a 'verify in:' line (files to check the claim against), '!' lines when the doc
@@ -66,11 +95,14 @@ def build_server():
         domains: limit to these memories (default: this project and its notes)."""
         try:
             res = client.search(question, domains or _default_domains(), mode, _k(k), context=True)
+        except ImportError:
+            raise                                                  # -> _guarded: the install changed under us
         except Exception as e:                                     # noqa: BLE001
             return f"search failed: {e}. If no memory exists yet, call refresh(path='.')."
         return f"{res['mode']} search: {len(res['hits'])} sections\n\n{res.get('context') or 'no results'}"
 
     @mcp.tool()
+    @_guarded
     def docs_for(files: list[str] | None = None, change: str = "working") -> str:
         """Which doc sections must be reviewed for a code change, so docs stay true.
         files: repo-relative paths you changed (e.g. ["config/deploy.yml"]) -> the sections that describe them.
@@ -86,6 +118,7 @@ def build_server():
         return docsync.render(p, 30) or "docs are up to date for this change"
 
     @mcp.tool()
+    @_guarded
     def remember(kind: str, goal: str = "", state: str = "", next_steps: list[str] | None = None,
                  decisions: list[str] | None = None, files: list[str] | None = None,
                  doc_path: str = "", decision: str = "", doc_says: str = "", code_does: str = "", code_ref: str = "",
@@ -118,6 +151,7 @@ def build_server():
         return 'kind must be "note" or "decision"'
 
     @mcp.tool()
+    @_guarded
     def refresh(path: str | None = None, wait: bool = True, status_only: bool = False) -> str:
         """Bring the memory up to date after docs or code changed (incremental: only edited sections are re-embedded).
         path: a repo or docs folder to index for the first time (stored outside the repo).

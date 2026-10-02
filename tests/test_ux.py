@@ -80,6 +80,47 @@ def test_mcp_server_has_four_tools():
     assert sorted(t.name for t in tools) == ["docs_for", "refresh", "remember", "search"]
 
 
+def _call(server, tool, args):
+    import asyncio
+    out = asyncio.run(server.call_tool(tool, args))
+    blocks = out[0] if isinstance(out, tuple) else out
+    return "".join(getattr(b, "text", "") for b in blocks)
+
+
+def test_mcp_tools_keep_their_parameters_under_the_guard():
+    pytest.importorskip("mcp")
+    import asyncio
+    from defrost_ai.service.mcp_server import build_server
+    tools = {t.name: t for t in asyncio.run(build_server().list_tools())}
+    assert {"question", "mode", "k", "domains"} <= set(tools["search"].inputSchema["properties"])
+    assert {"kind", "goal", "decision"} <= set(tools["remember"].inputSchema["properties"])
+
+
+def test_mcp_server_explains_a_reinstall_instead_of_an_import_error(monkeypatch, tmp_path):
+    """A long-lived server whose install folder vanished (reinstall under another Python) must say 'reconnect',
+    not 'cannot import name ...'."""
+    pytest.importorskip("mcp")
+    from defrost_ai.service import mcp_server
+    server = mcp_server.build_server()
+    monkeypatch.setattr(mcp_server, "INSTALL_DIR", tmp_path / "gone")
+    for tool, args in [("search", {"question": "q"}), ("refresh", {"status_only": True}),
+                       ("remember", {"kind": "note", "goal": "g"}), ("docs_for", {})]:
+        text = _call(server, tool, args)
+        assert "reinstalled or upgraded" in text and "/mcp" in text, (tool, text)
+
+
+def test_mcp_server_turns_a_lazy_import_failure_into_reconnect(monkeypatch):
+    pytest.importorskip("mcp")
+    from defrost_ai.service import mcp_server
+
+    def broken(*a, **k):
+        raise ImportError("cannot import name 'notes' from 'defrost_ai'")
+    monkeypatch.setattr(mcp_server.client, "search", broken)
+    monkeypatch.setattr(mcp_server, "_default_domains", lambda: None)
+    text = _call(mcp_server.build_server(), "search", {"question": "q"})
+    assert "reinstalled or upgraded" in text and "cannot import name 'notes'" in text
+
+
 def test_mcp_without_the_package_explains_instead_of_crashing(monkeypatch, capsys):
     from defrost_ai.service import mcp_server
     monkeypatch.setattr(mcp_server, "mcp_available", lambda: False)

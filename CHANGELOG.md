@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2.0 (unreleased)
+## 1.2.0 (2026-10-02)
 
 - **`mcp` is a core dependency:** the MCP server installs with defrost-ai; the `[mcp]` extra is kept, empty, so
   existing install commands still resolve. If an environment still lacks it, `defrost mcp` exits with the reinstall
@@ -12,6 +12,9 @@
   built (with the reason) instead of failing `defrost search` across all memories with HTTP 500.
 - **Fast search across memories ranks by relevance:** each memory's #1 hit used to tie, so the first-registered
   memories filled the results whatever they matched; hits are now merged by cosine, keeping each memory's own order.
+- **The MCP server says when it was replaced:** a running `defrost mcp` whose install changed under it (reinstall or
+  upgrade, e.g. under another Python) used to fail each tool call with "cannot import name ..."; it now answers
+  "reconnect it: /mcp → defrost → Reconnect". MCP clients own the process, so it cannot restart itself.
 - **Upgrades restart the service after a Python change:** a running service whose install directory no longer exists
   (reinstalled under another Python) is restarted instead of being kept as "another installation" running old code.
 - **Rename:** the package is `defrost-ai` (import `defrost_ai`), the CLI is `defrost`, and the models are
