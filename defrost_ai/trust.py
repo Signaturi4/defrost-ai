@@ -49,3 +49,37 @@ def write(workspace: str | Path, level: str) -> None:
     spec = json.loads(p.read_text())
     spec["doc_trust"] = level
     p.write_text(json.dumps(spec, indent=1))
+
+
+def stored(workspace: str | Path | None) -> str | None:
+    """The level chosen for this project, or None when none was ever chosen (read() then falls back to DEFAULT)."""
+    try:
+        level = json.loads(Path(workspace).read_text()).get("doc_trust") if workspace else None
+    except (OSError, ValueError):
+        return None
+    return level if level in LEVELS else None
+
+
+CODE_EXT = {".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".kt", ".swift", ".rb", ".php",
+            ".c", ".cc", ".cpp", ".h", ".hpp", ".cs", ".scala", ".sh", ".sql", ".vue", ".svelte", ".m", ".mm", ".dart",
+            ".lua", ".ex", ".exs", ".tf"}
+DOC_EXT = {".md", ".mdx", ".rst", ".txt", ".adoc"}
+KIT = ("docs/tools/", "docs/templates/")                    # the doc-rules kit setup copies in: not the project's code
+
+
+def suggest(root: str | Path) -> tuple[str, str]:
+    """Recommended level for a repository, with the reason: "high" for a docs repository (at least 10 doc files per
+    code file: the docs are what there is to know, a few helper scripts aside), else "low". Hidden folders (.claude,
+    .agents, ...) are tooling, not the project's code."""
+    import subprocess
+    root = Path(root)
+    r = subprocess.run(["git", "-C", str(root), "ls-files"], capture_output=True, text=True)
+    files = r.stdout.splitlines() if r.returncode == 0 and r.stdout.strip() else \
+        [str(p.relative_to(root)) for p in root.rglob("*") if p.is_file()]
+    files = [f for f in files if not any(part.startswith(".") for part in Path(f).parts) and not f.startswith(KIT)]
+    code = sum(Path(f).suffix.lower() in CODE_EXT for f in files)
+    docs = sum(Path(f).suffix.lower() in DOC_EXT for f in files)
+    if docs and docs >= 10 * code:
+        return "high", (f"{docs} doc files and {code} code files: a docs repository, the docs are the source of truth"
+                        if code else f"{docs} doc files and no code: the docs are the source of truth")
+    return "low", f"{code} code files and {docs} doc files: code changes faster than docs"

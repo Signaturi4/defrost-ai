@@ -1,6 +1,6 @@
 [project]
 name = "defrost-ai"   # project: defrost-ai
-version = "1.2.0"
+version = "1.2.1"
 description = "Hybrid-RAG knowledge memory for codebases and document collections: BM25 + Defrost-Ret dense retrieval + Defrost-Rerank, with doc-to-code links from graphify's AST graph."
 readme = "README.md"
 requires-python = ">=3.11"

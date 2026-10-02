@@ -28,14 +28,15 @@ import sys
 PUBLIC = ["setup", "search", "status", "refresh", "docs", "note", "config", "mcp", "serve"]
 PROFILES = {
     "minimal":  dict(on_main_merge=True),
-    "standard": dict(on_main_merge=True, doc_rules=True, handoff=True, docs_sync=True, docs_gate=False),
+    "standard": dict(on_main_merge=True, doc_rules=True, handoff=True, docs_sync=True, docs_gate=False,
+                     prompt_context=True),
     "full":     dict(on_main_merge=True, doc_rules=True, handoff=True, docs_sync=True, docs_gate=True,
-                     handoff_on_compact=True),
+                     handoff_on_compact=True, prompt_context=True),
 }
 PROFILE_TEXT = {
     "minimal": "keep the index fresh after every merge or commit to main; nothing else",
-    "standard": "minimal + doc-writing rules in CLAUDE.md + handoff notes after /clear + a reminder of commits "
-                "whose docs need an update (recommended)",
+    "standard": "minimal + the memory is searched for each question before Claude answers + doc-writing rules in "
+                "CLAUDE.md + handoff notes after /clear + a reminder of commits whose docs need an update (recommended)",
     "full": "standard + Claude is asked to update docs before it finishes and before it commits + a handoff note "
             "is written automatically before compaction",
 }
@@ -63,8 +64,11 @@ def main(argv=None):
     st.add_argument("--profile", choices=list(PROFILES), help="; ".join(f"{k}: {v}" for k, v in PROFILE_TEXT.items()))
     st.add_argument("--mode", choices=["accurate", "fast"], help="your default search mode (saved in config)")
     st.add_argument("--doc-trust", choices=["low", "high"],
-                    help="low (default): docs are hints, Claude checks the code. high: docs are reliable.")
+                    help="required for a new project: low = code is the truth, docs are hints and Claude checks the "
+                         "code; high = docs are reliable (docs repositories, well-maintained docs)")
     st.add_argument("--yes", "-y", action="store_true", help="no questions: recommended answers")
+    st.add_argument("--suggest-trust", action="store_true",
+                    help="print the recommended --doc-trust for this repository (and the stored one), change nothing")
     st.add_argument("--remove", "--remove-triggers", dest="remove_triggers", action="store_true",
                     help="remove every hook and schedule defrost installed in this repository")
     adv = st.add_argument_group("customize (each overrides the profile)")
@@ -73,6 +77,10 @@ def main(argv=None):
     adv.add_argument("--every-hours", type=float, help="also refresh on a schedule (launchd on macOS, cron on Linux)")
     adv.add_argument("--claude-hook", action="store_true", help="also refresh when a Claude session starts")
     adv.add_argument("--no-doc-rules", action="store_true", help="do not add the doc-writing rules to CLAUDE.md")
+    adv.add_argument("--prompt-context", dest="prompt_context", action="store_true", default=None,
+                     help="search the memory for each question and add the best sections before Claude answers")
+    adv.add_argument("--no-prompt-context", dest="prompt_context", action="store_false",
+                     help="do not search the memory automatically for each question")
     adv.add_argument("--handoff-on-compact", action="store_true", help="write a handoff note before compaction")
     adv.add_argument("--docs-auto", action="store_true",
                      help="write docs with claude -p after commits made outside Claude (costs Claude usage)")
@@ -132,7 +140,7 @@ def main(argv=None):
     v.add_argument("--port", type=int); v.add_argument("--host", default="127.0.0.1")
 
     hk = sub.add_parser("hook")                                   # hidden: the one entry point every hook calls
-    hk.add_argument("event", choices=["brief", "pending", "stop", "commit", "post-commit", "pre-compact"])
+    hk.add_argument("event", choices=["brief", "pending", "stop", "commit", "post-commit", "pre-compact", "prompt"])
 
     # ---- old commands (hidden; kept so installed hooks and scripts keep working) ------------------------------------
     b = sub.add_parser("build"); b.add_argument("workspace"); b.add_argument("--domain"); b.add_argument("--description", default="")
@@ -400,17 +408,38 @@ def cmd_setup(a):
         print(f"removed defrost hooks and schedules from {Path(a.path).resolve()}")
         setup(a.path, a.domain, remove=True, log=lambda m: None)
         return 0
+    from defrost_ai import trust
+    from defrost_ai.project_setup import HOME
+    root = Path(a.path).expanduser().resolve()
+    stored = trust.stored(HOME / f"{a.domain or root.name.lower().replace(' ', '-')}.workspace.json")
+    suggested, why = trust.suggest(root)
+    if a.suggest_trust:
+        print(json.dumps({"suggested": suggested, "why": why, "stored": stored}))
+        return 0
     interactive = sys.stdin.isatty() and not a.yes and not (a.profile or a.mode or a.doc_trust)
     if interactive:
         print("defrost setup: 3 questions. Press Enter for the recommended answer.")
         a.profile = _ask("How much should defrost do in this repository?",
                          [(k, v) for k, v in PROFILE_TEXT.items()], default=1)
-        a.mode = _ask("Default search mode?",
-                      [("accurate", "best results; ~1-2 s when the reranker runs"),
-                       ("fast", "~0.1 s; no reranker, a little less accurate")], default=0)
+        trust_default = stored or suggested
+        print(f"\n(this repository: {why})")
         a.doc_trust = _ask("How much should Claude trust this project's docs?",
                            [("low", "code is the truth: docs are hints, Claude checks the code (fast-changing projects)"),
-                            ("high", "docs are reliable: answer from them, check code only when flagged")], default=0)
+                            ("high", "docs are reliable: answer from them, check code only when flagged")],
+                           default=0 if trust_default == "low" else 1)
+        if a.prompt_context is None and a.profile != "minimal":
+            a.prompt_context = _ask("Search the memory automatically for each question?",
+                                    [("yes", "Claude gets the best sections before it answers: one turn, ~4 s instead "
+                                             "of ~20 s for a lookup (skips commands, short replies, unrelated prompts)"),
+                                     ("no", "Claude calls the search tool itself when it decides to")],
+                                    default=0) == "yes"
+    configured = settings.get("project.doc_trust") if settings.source("project.doc_trust") != "default" else None
+    if not (a.doc_trust or stored or configured):
+        print(f"defrost setup: choose how much Claude should trust this project's docs (asked once per project):\n"
+              f"  --doc-trust low    code is the truth: docs are hints, Claude checks the code before answering\n"
+              f"  --doc-trust high   docs are reliable: Claude answers from them\n"
+              f"Suggested here: --doc-trust {suggested} ({why}).", file=sys.stderr)
+        return 2
     legacy = {k: True for k in ("on_main_merge", "doc_rules", "docs_sync", "handoff") if getattr(a, k)}
     profile = a.profile or ("custom" if legacy else "standard")
     opts = dict(PROFILES.get(profile, legacy))
@@ -418,13 +447,15 @@ def cmd_setup(a):
         opts["doc_rules"] = False
     if a.handoff_on_compact:
         opts.update(handoff=True, handoff_on_compact=True)
+    if a.prompt_context is not None:
+        opts["prompt_context"] = a.prompt_context
     if a.docs_auto:
         opts.update(docs_sync=True, docs_auto=True)
     if a.mode:
         settings.set_("search.mode", a.mode)
     print(f"\nSetting up {Path(a.path).resolve()} (profile {profile}: {PROFILE_TEXT.get(profile, ', '.join(legacy))})")
     res = setup(a.path, a.domain, a.build, every_hours=a.every_hours, claude_hook=a.claude_hook, claude=a.claude,
-                doc_trust=a.doc_trust or settings.get("project.doc_trust"), docs_budget=a.docs_budget,
+                doc_trust=a.doc_trust or (None if stored else configured), docs_budget=a.docs_budget,
                 docs_auto_merge=a.docs_auto_merge, memory_dir=None if a.memory_home else a.memory_dir,
                 log=lambda m: print("  " + m, flush=True), **opts)
     _print_setup(res, settings.get("search.mode"))
@@ -437,7 +468,8 @@ def _print_setup(res: dict, mode: str) -> None:
     labels = {"on_main_merge": "refresh after every merge or commit to main", "every_hours": "refresh on a schedule",
               "claude_hook": "refresh when a Claude session starts", "handoff": "handoff note shown after /clear",
               "handoff_on_compact": "handoff note written before compaction",
-              "docs_sync": "doc follow-ups for every commit"}
+              "docs_sync": "doc follow-ups for every commit",
+              "prompt_context": "memory searched for each question before Claude answers"}
     from defrost_ai.project_setup import status
     c = next((r.get("counts") or {} for r in status(res["domain"])), {})
     built = (f": {c.get('docs', 0)} docs, {c.get('sections', 0)} sections, {c.get('doc_code_links', 0)} doc->code links"
@@ -631,6 +663,10 @@ def cmd_hook(a):
             text = docsync.pending_brief(notes.domain_for(Path.cwd()))
         elif a.event in ("stop", "commit"):
             out = docsync.hook(a.event, json.loads(sys.stdin.read() or "{}"))
+            text = json.dumps(out) if out else ""
+        elif a.event == "prompt":
+            from defrost_ai import prompt_context
+            out = prompt_context.hook(json.loads(sys.stdin.read() or "{}"))
             text = json.dumps(out) if out else ""
         elif a.event == "post-commit":
             f = docsync.record_commit(Path.cwd(), "HEAD")

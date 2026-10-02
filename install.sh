@@ -4,12 +4,12 @@
 # Installs the `defrost` CLI (uv tool, Python 3.12) from release tag v$DEFROST_VERSION, downloads and verifies the
 # weights, and registers the Claude Code slash commands + MCP server for all projects.
 #
-#   DEFROST_VERSION=1.2.0   install this release (default below; kept equal to pyproject by scripts/release_check.py)
+#   DEFROST_VERSION=1.2.1   install this release (default below; kept equal to pyproject by scripts/release_check.py)
 #   DEFROST_REF=main        install a branch or commit instead of a release (moving target)
 #   DEFROST_REPO=/path      install from a local checkout (development)
 set -eu
 
-VERSION="${DEFROST_VERSION:-1.2.0}"
+VERSION="${DEFROST_VERSION:-1.2.1}"
 GITHUB="https://github.com/Signaturi4/defrost-ai"
 
 fail() { printf 'defrost install: %s\n' "$*" >&2; exit 1; }

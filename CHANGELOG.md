@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.2.1 (2026-10-02)
+
+- **Questions are answered from the memory in one turn:** a Claude Code `UserPromptSubmit` hook
+  (`defrost hook prompt`, on in the `standard` and `full` profiles, `--no-prompt-context` to turn it off) searches
+  the memory for each prompt (fast mode, top 3) and adds the sections before Claude starts. Measured on a docs
+  repository for "who is artem": 18-30 s and 5 model turns before, ~4 s and 1 turn with Sonnet. It skips slash
+  commands, prompts under 3 words and prompts whose best section is below `prompt_context.min_cosine` (0.34;
+  calibrated on 10 real questions, 0.35-0.60, against 13 coding and chit-chat prompts, 0.00-0.32), and never waits
+  for a cold service.
+- **Doc trust is a required setup question:** it is asked for every new project instead of the default search mode
+  (still `--mode` / `defrost config search.mode`), and `--yes` without `--doc-trust` stops with the suggestion for
+  the repository instead of silently choosing `low`. `defrost setup --suggest-trust` prints it: `high` for a docs
+  repository (at least 10 doc files per code file), else `low`. The `/defrost-setup` command always asks it.
+- **Fix: re-running setup no longer resets doc trust:** a re-run without `--doc-trust` passed the global default
+  (`low`) and overwrote a project set to `high`; the stored level is now kept.
+
 ## 1.2.0 (2026-10-02)
 
 - **`mcp` is a core dependency:** the MCP server installs with defrost-ai; the `[mcp]` extra is kept, empty, so

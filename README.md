@@ -96,17 +96,28 @@ The three questions:
    | profile | what you get |
    |---|---|
    | `minimal` | the index refreshes after every merge or commit to main. Nothing else. |
-   | `standard` (recommended) | minimal + doc-writing rules in `CLAUDE.md` + a handoff note shown after `/clear` + a reminder at session start of commits whose docs need an update |
+   | `standard` (recommended) | minimal + the memory searched for each question + doc-writing rules in `CLAUDE.md` + a handoff note shown after `/clear` + a reminder at session start of commits whose docs need an update |
    | `full` | standard + Claude is asked to update docs before it finishes and before it commits + a handoff note is written automatically before compaction |
 
-2. **Default search mode?** (`--mode`) See [Search modes](#search-modes). Default `accurate`.
-
-3. **How far should Claude trust your docs?** (`--doc-trust`)
+2. **How far should Claude trust your docs?** (`--doc-trust`). Required: setup asks it for every new project and
+   never picks it silently; `--yes` without `--doc-trust` stops and prints the suggestion for the repository.
+   `defrost setup --suggest-trust` shows it: `high` for a docs repository (at least 10 doc files per code file),
+   else `low`. Re-running setup keeps the stored level.
 
    | setting | for | what Claude does with a hit |
    |---|---|---|
-   | `low` (default, "code is the truth") | code that changes daily, few docs | treats the section as a hint, reads the `verify in:` files, answers from the code and lists doc/code conflicts |
-   | `high` ("docs are reliable") | legacy or well-documented projects | answers from the section; reads code only when a hit carries a `!` stale or conflict line |
+   | `low` ("code is the truth") | code that changes daily, few docs | treats the section as a hint, reads the `verify in:` files, answers from the code and lists doc/code conflicts |
+   | `high` ("docs are reliable") | docs repositories, legacy or well-documented projects | answers from the section; reads code only when a hit carries a `!` stale or conflict line |
+
+3. **Search the memory automatically for each question?** (`--prompt-context`, on in `standard` and `full`;
+   `--no-prompt-context` turns it off). A Claude Code `UserPromptSubmit` hook (`defrost hook prompt`) searches the
+   memory (fast mode, top 3) and adds the sections to the prompt, so a lookup is answered in one model turn instead
+   of three to five (measured on a docs repository: ~4 s with Sonnet instead of 18–30 s). It skips slash commands,
+   prompts under 3 words and prompts whose best section is less similar than `prompt_context.min_cosine` (0.34), and
+   it never waits for a cold service.
+
+The search mode is not asked: it defaults to `accurate` (see [Search modes](#search-modes)); `--mode` or
+`defrost config search.mode fast` changes it.
 
 You never run a build by hand. Refreshes run in the background, are incremental (only new or edited sections are
 re-embedded) and log to `~/.defrost-ai/<domain>.refresh.log`. The search index lives in `~/.defrost-ai/<domain>`,

@@ -4,7 +4,7 @@ Imports are lazy so the stdlib-only parts (defrost_ai.service.client, the Shephe
 environment without torch."""
 import os as _os
 
-__version__ = "1.2.0"
+__version__ = "1.2.1"
 
 # Before 1.2 the package was `kev-memory`: honour its environment variables and data folder for one minor version.
 for _k, _v in list(_os.environ.items()):

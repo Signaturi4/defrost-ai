@@ -287,7 +287,7 @@ def remove_memory_rule(root: Path) -> None:
 def setup(path=".", domain=None, build="now", on_main_merge=False, every_hours=None, claude_hook=False,
           doc_rules=False, claude=False, remove=False, log=print, doc_trust=None, handoff=False, docs_sync=False,
           docs_auto=False, docs_budget=0.5, handoff_on_compact=False, docs_auto_merge=False,
-          memory_dir="defrost-memory", docs_gate=True) -> dict:
+          memory_dir="defrost-memory", docs_gate=True, prompt_context=False) -> dict:
     """doc_trust: "high" | "low" | None (keep the stored level; "low" for a new domain). See defrost_ai/trust.py.
     memory_dir: folder in the project for the context repository (None keeps it in ~/.defrost-ai)."""
     root = Path(path).expanduser().resolve()
@@ -299,6 +299,8 @@ def setup(path=".", domain=None, build="now", on_main_merge=False, every_hours=N
         notes.remove_hook(root)
         compact_handoff.remove_hook(root)
         docsync.remove_hooks(root)
+        from defrost_ai import prompt_context as pc
+        pc.remove_hook(root)
         state_file(name).unlink(missing_ok=True)
         log(f"[{name}] triggers removed")
         return out | {"removed": True}
@@ -347,6 +349,11 @@ def setup(path=".", domain=None, build="now", on_main_merge=False, every_hours=N
                              "gate": docs_gate,
                              "files": docsync.install_hooks(root, auto=docs_auto, budget_usd=docs_budget,
                                                             auto_merge=docs_auto_merge, gate=docs_gate)}
+    from defrost_ai import prompt_context as pc
+    if prompt_context:
+        trig["prompt_context"] = pc.install_hook(root)
+    else:
+        pc.remove_hook(root)                                         # re-running setup without it turns it off
     state_file(name).write_text(json.dumps({"path": str(root), "installed": time.strftime("%Y-%m-%dT%H:%M:%S"),
                                             "triggers": trig}, indent=1))
     out["triggers"] = trig

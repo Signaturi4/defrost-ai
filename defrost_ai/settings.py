@@ -42,6 +42,9 @@ SETTINGS = [
     Setting("models.allow_older_weights", False, (), "DEFROST_ALLOW_OLDER_WEIGHTS",
             "run older cached weights when the pinned version cannot be downloaded (every result then says so). "
             "Off: fail with a clear error instead."),
+    Setting("prompt_context.min_cosine", 0.34, (), "DEFROST_PROMPT_MIN_COSINE",
+            "the prompt hook adds memory sections to a question only when the best one is at least this similar "
+            "(0-1; higher = fewer, surer injections)"),
     Setting("service.port", 8765, (), "",
             "local port of the background search service"),
 ]
@@ -68,6 +71,8 @@ def _file() -> dict:
 def _coerce(s: Setting, value):
     if isinstance(s.default, bool):
         return value if isinstance(value, bool) else str(value).strip().lower() in ("1", "true", "yes", "on")
+    if isinstance(s.default, float) and not isinstance(value, (int, float)):
+        value = float(value)
     if isinstance(s.default, int) and not isinstance(value, int):
         value = int(value)
     if s.choices and value not in s.choices:
