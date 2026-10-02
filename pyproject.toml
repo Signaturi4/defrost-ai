@@ -11,11 +11,12 @@ dependencies = [
     "transformers>=5.17,<6",
     "peft>=0.21",
     "safetensors>=0.4.3",
+    "mcp>=1.2,<2",                    # `defrost mcp`: MCP server for Claude Code / Desktop / Cursor
 ]
 
 [project.optional-dependencies]
 code = ["graphifyy==0.4.32"]          # code graph (tree-sitter AST); without it the memory is text-only
-mcp = ["mcp>=1.2,<2"]                 # `defrost mcp`: MCP server for Claude Code / Desktop / Cursor
+mcp = []                              # kept so existing `defrost-ai[mcp]` installs still resolve; mcp is core now
 shepherd = ["shepherd-ai"]             # reviewable memory refreshes + memory-grounded agent tasks
 eval = ["ragas==0.4.3", "langchain-community>=0.3,<0.3.28"]
 dev = ["pytest>=8"]

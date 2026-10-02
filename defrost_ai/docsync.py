@@ -419,12 +419,13 @@ def install_hooks(root: Path, auto: bool = False, budget_usd: float = 0.5, auto_
     f.parent.mkdir(parents=True, exist_ok=True)
     settings = json.loads(f.read_text()) if f.exists() and f.read_text().strip() else {}
     hooks = settings.setdefault("hooks", {})
+    cmd = notes.claude_hook_command                                      # committed file: portable command
     want = {"SessionStart": {"matcher": "startup|resume",
-                             "hooks": [{"type": "command", "command": f"{exe} hook pending  # {DOCS_TAG}"}]}}
+                             "hooks": [{"type": "command", "command": cmd("hook pending", DOCS_TAG)}]}}
     if gate:
-        want |= {"Stop": {"hooks": [{"type": "command", "command": f"{exe} hook stop  # {DOCS_TAG}"}]},
+        want |= {"Stop": {"hooks": [{"type": "command", "command": cmd("hook stop", DOCS_TAG)}]},
                  "PreToolUse": {"matcher": "Bash", "hooks": [{"type": "command",
-                                                              "command": f"{exe} hook commit  # {DOCS_TAG}"}]}}
+                                                              "command": cmd("hook commit", DOCS_TAG)}]}}
     for event in ("Stop", "PreToolUse", "SessionStart"):                  # re-running setup replaces our entries
         hooks[event] = [h for h in hooks.get(event, []) if DOCS_TAG not in json.dumps(h)]
         if not hooks[event]:

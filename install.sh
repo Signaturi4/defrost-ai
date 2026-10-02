@@ -46,7 +46,7 @@ fi
 echo "==> installing defrost ${WHAT} (uv tool, Python 3.12)"
 uv tool uninstall kev-memory >/dev/null 2>&1 || true            # the package was called kev-memory before 1.2
 # mac extra: MLX backend; its dependencies are marker-gated to Apple Silicon, so it is a no-op elsewhere
-uv tool install --force --reinstall --python 3.12 "defrost-ai[code,mcp,mac] @ ${SRC}" \
+uv tool install --force --reinstall --python 3.12 "defrost-ai[code,mac] @ ${SRC}" \
   || fail "uv could not install defrost from ${SRC} (see the uv error above)."
 
 BIN="${UV_TOOL_BIN_DIR:-$HOME/.local/bin}"
