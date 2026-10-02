@@ -10,6 +10,8 @@
   silently where defrost is not installed, so the file can be committed for teammates.
 - **A stale memory no longer breaks search:** a registered memory whose workspace file was deleted is listed as not
   built (with the reason) instead of failing `defrost search` across all memories with HTTP 500.
+- **Fast search across memories ranks by relevance:** each memory's #1 hit used to tie, so the first-registered
+  memories filled the results whatever they matched; hits are now merged by cosine, keeping each memory's own order.
 - **Upgrades restart the service after a Python change:** a running service whose install directory no longer exists
   (reinstalled under another Python) is restarted instead of being kept as "another installation" running old code.
 - **Rename:** the package is `defrost-ai` (import `defrost_ai`), the CLI is `defrost`, and the models are
