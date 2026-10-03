@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Monitoring mode (optional):** `defrost setup . --monitor` adds Claude Code hooks that log each session to
+  `<DEFROST_HOME>/monitor/<project>/<session>.jsonl`. They record grep calls, memory searches and updates (by
+  command), the prompt hook's decision, every tool call with timing and errors, the full sequence (user input,
+  reasoning, tool call, output, with token usage), compactions and subagents. Switched with `DEFROST_MONITOR=on|off`
+  in the project's `.env`. Off costs nothing (the switch is checked in the shell); the hook always exits 0 and is
+  silent. Deleting `defrost_ai/monitor.py` leaves everything else working. `defrost monitor report [--sequence]` and
+  `defrost monitor status` read the logs. See docs/MONITORING.md.
+
 ## 1.2.1 (2026-10-02)
 
 - **Questions are answered from the memory in one turn:** a Claude Code `UserPromptSubmit` hook

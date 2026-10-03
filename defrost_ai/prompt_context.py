@@ -35,29 +35,36 @@ def _start_service_in_background() -> None:
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
 
-def context_for(payload: dict) -> str | None:
-    """The text to add to Claude's context for this prompt, or None."""
+def context_for(payload: dict, info: dict | None = None) -> str | None:
+    """The text to add to Claude's context for this prompt, or None. `info` receives why (for monitoring)."""
+    info = {} if info is None else info
     prompt = payload.get("prompt") or ""
     if not _worth_searching(prompt):
+        info["reason"] = "command or short prompt"
         return None
     from defrost_ai import notes, settings
     from defrost_ai.context_repo import context_domain
     from defrost_ai.service import client
     name = notes.domain_for(payload.get("cwd") or os.getcwd())
     if not name:
+        info["reason"] = "no memory for this folder"
         return None
     if not client.alive():                               # never wait for a cold start inside the user's prompt
         _start_service_in_background()
+        info["reason"] = "service not running (started in background)"
         return None
     built = client._call("GET", "/domains", timeout=TIMEOUT)
     domains = [d for d in (name, context_domain(name)) if built.get(d, {}).get("built")]
     if not domains:
+        info["reason"] = "memory not built"
         return None
     res = client._call("POST", "/search", {"query": prompt.strip()[:MAX_QUERY], "domains": domains, "mode": "fast",
                                            "k": K, "context": True}, timeout=TIMEOUT)
     hits = res.get("hits") or []
     best = max((h.get("cosine") or 0 for h in hits), default=0)
+    info.update(best=round(best, 3), hits=len(hits), domain=name)
     if best < settings.get("prompt_context.min_cosine") or not res.get("context"):
+        info["reason"] = "below relevance threshold"
         return None
     return (f"Project memory ({name}) was searched automatically for this prompt (best match {best:.2f}). If these "
             "sections answer it, answer from them and cite path:Lstart-end without searching again; call the defrost "
@@ -65,7 +72,20 @@ def context_for(payload: dict) -> str | None:
 
 
 def hook(payload: dict) -> dict | None:
-    text = context_for(payload)
+    import time
+    from defrost_ai import monitor_event
+    t0, info, text, err = time.time(), {}, None, None
+    try:
+        text = context_for(payload, info)
+    except Exception as e:                               # noqa: BLE001  (logged, then re-raised to `defrost hook`)
+        err = e
+    monitor_event("memory_inject", payload.get("session_id"), payload.get("cwd"),
+                  decision="injected" if text else ("error" if err else "skipped"),
+                  reason=f"{type(err).__name__}: {err}" if err else info.get("reason"),
+                  ms=round((time.time() - t0) * 1000), chars=len(text or ""),
+                  **{k: v for k, v in info.items() if k != "reason"})
+    if err:
+        raise err
     return {"hookSpecificOutput": {"hookEventName": EVENT, "additionalContext": text}} if text else None
 
 

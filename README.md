@@ -247,6 +247,18 @@ same install. A service started by another install (say a repo `.venv` next to t
 never stopped. An MCP server started before the upgrade gets 401 until you restart Claude;
 `DEFROST_SERVICE_AUTH=0` on the service turns the token check off for that transition.
 
+### Monitoring (optional)
+
+`defrost setup . --monitor` adds hooks that log, per Claude session, how the memory was used:
+- grep calls vs memory searches and updates, by command;
+- whether the prompt hook injected memory, and why not when it didn't;
+- every tool call with its duration and errors;
+- the full sequence: user input → reasoning → tool call → output, with tokens.
+
+It's off until `DEFROST_MONITOR=on` is in the project's `.env`. When off it costs nothing, it never blocks Claude,
+and it can be deleted without affecting anything else. Read the logs with `defrost monitor report --sequence`.
+Details: [docs/MONITORING.md](docs/MONITORING.md).
+
 ### Working memory: a git-backed context repository
 
 Handoff notes (`/handoff`, `remember(kind="note")`, `defrost note`) and your doc/code conflict decisions are stored
@@ -454,7 +466,7 @@ integrations/      the graphify patch
 benchmarks/        frozen question suites (held-out repos, books, e2e) + the e2e harness
 training/          training scripts and configs (MNTP -> CGSA -> Defrost-Ret-B / Defrost-Rerank), Kaggle notebooks
 scripts/           parity check, benchmark source fetcher, weight export, reranker efficiency, README charts, brand assets
-docs/              EVALUATION, RESULTS, ARCHITECTURE, AGENT_LOOP, E2E_GRAPHIFY, DESIGN_NOTES, WRITING_FOR_EXTRACTION
+docs/              EVALUATION, RESULTS, ARCHITECTURE, AGENT_LOOP, E2E_GRAPHIFY, DESIGN_NOTES, WRITING_FOR_EXTRACTION, MONITORING
 docs/brand/        app icon, logo, favicons, social preview (BRAND.md has the rules)
 templates/         doc-rules kit for CLAUDE.md (rules, glossary, linter, Facts extractor)
 ```

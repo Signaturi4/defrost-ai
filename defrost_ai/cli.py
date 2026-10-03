@@ -81,6 +81,10 @@ def main(argv=None):
                      help="search the memory for each question and add the best sections before Claude answers")
     adv.add_argument("--no-prompt-context", dest="prompt_context", action="store_false",
                      help="do not search the memory automatically for each question")
+    adv.add_argument("--monitor", dest="monitor", action="store_true", default=None,
+                     help="install the monitoring hooks (log memory use and the agent sequence; switched on with "
+                          "DEFROST_MONITOR=on in the project's .env)")
+    adv.add_argument("--no-monitor", dest="monitor", action="store_false", help="remove the monitoring hooks")
     adv.add_argument("--handoff-on-compact", action="store_true", help="write a handoff note before compaction")
     adv.add_argument("--docs-auto", action="store_true",
                      help="write docs with claude -p after commits made outside Claude (costs Claude usage)")
@@ -140,7 +144,8 @@ def main(argv=None):
     v.add_argument("--port", type=int); v.add_argument("--host", default="127.0.0.1")
 
     hk = sub.add_parser("hook")                                   # hidden: the one entry point every hook calls
-    hk.add_argument("event", choices=["brief", "pending", "stop", "commit", "post-commit", "pre-compact", "prompt"])
+    hk.add_argument("event", choices=["brief", "pending", "stop", "commit", "post-commit", "pre-compact", "prompt",
+                                         "monitor"])
 
     # ---- old commands (hidden; kept so installed hooks and scripts keep working) ------------------------------------
     b = sub.add_parser("build"); b.add_argument("workspace"); b.add_argument("--domain"); b.add_argument("--description", default="")
@@ -153,6 +158,8 @@ def main(argv=None):
     e.add_argument("--split", default="dev"); e.add_argument("--out"); e.add_argument("--rankings")
     e.add_argument("--only", help="keep suite rows whose \"suite\" field matches (multi-memory suites)")
     sub.add_parser("verify-weights")
+    mo = sub.add_parser("monitor", add_help=False)                 # hidden: defrost monitor report|status (optional)
+    mo.add_argument("rest", nargs=argparse.REMAINDER)
     cf = sub.add_parser("conflicts")
     cf.add_argument("domain"); cf.add_argument("--doc", help="doc path as cited by search, to record a decision")
     cf.add_argument("--decision", choices=["code", "doc", "both", "open"]); cf.add_argument("--note", default="")
@@ -229,6 +236,13 @@ def main(argv=None):
             print(f"{h['file']}: {h['domain']}:{h['path']}:L{h['lines'][0]}-{h['lines'][1]}  {h['heading']}")
         if not hits:
             print("no doc section links to these files")
+    elif a.cmd == "monitor":
+        try:
+            from defrost_ai import monitor
+        except ImportError:
+            print("monitoring is not installed in this defrost (defrost_ai/monitor.py is missing)")
+            return 1
+        return monitor.main(a.rest)
     elif a.cmd == "benchmark":
         from defrost_ai.evaluation.benchmark import print_report, run
         res = run(a.suite, a.memory, a.split, save_rankings=a.rankings, only=a.only)
@@ -449,6 +463,8 @@ def cmd_setup(a):
         opts.update(handoff=True, handoff_on_compact=True)
     if a.prompt_context is not None:
         opts["prompt_context"] = a.prompt_context
+    if a.monitor is not None:
+        opts["monitor"] = a.monitor
     if a.docs_auto:
         opts.update(docs_sync=True, docs_auto=True)
     if a.mode:
@@ -469,7 +485,8 @@ def _print_setup(res: dict, mode: str) -> None:
               "claude_hook": "refresh when a Claude session starts", "handoff": "handoff note shown after /clear",
               "handoff_on_compact": "handoff note written before compaction",
               "docs_sync": "doc follow-ups for every commit",
-              "prompt_context": "memory searched for each question before Claude answers"}
+              "prompt_context": "memory searched for each question before Claude answers",
+              "monitor": "monitoring hooks (on with DEFROST_MONITOR=on in .env; `defrost monitor report`)"}
     from defrost_ai.project_setup import status
     c = next((r.get("counts") or {} for r in status(res["domain"])), {})
     built = (f": {c.get('docs', 0)} docs, {c.get('sections', 0)} sections, {c.get('doc_code_links', 0)} doc->code links"
@@ -655,6 +672,15 @@ def cmd_serve(a):
 
 def cmd_hook(a):
     """Every installed hook calls `defrost hook <event>`; a failing hook prints to stderr and never blocks."""
+    if a.event == "monitor":                             # optional module: a missing one is a silent no-op
+        try:
+            from defrost_ai import monitor
+            monitor.hook(json.loads(sys.stdin.read() or "{}"))
+        except Exception:                                # noqa: BLE001
+            pass
+        return 0
+    from defrost_ai import monitor_event
+    t0, err = time.time(), None
     try:
         from defrost_ai import compact_handoff, docsync, notes
         if a.event == "brief":
@@ -678,7 +704,10 @@ def cmd_hook(a):
         if text:
             print(text)
     except Exception as e:                               # noqa: BLE001
+        err = f"{type(e).__name__}: {e}"
         print(f"defrost hook {a.event}: {e}", file=sys.stderr)
+    monitor_event("defrost_hook", None, None, hook=a.event, ms=round((time.time() - t0) * 1000), ok=err is None,
+                  error=err)
     return 0
 
 
