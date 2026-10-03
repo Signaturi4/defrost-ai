@@ -82,12 +82,34 @@ slash commands with Claude Code. It installs the release named in the script (a 
 `DEFROST_VERSION=x.y.z` for another release or `DEFROST_REF=main` for the development branch. `defrost --version`
 shows the installed code and weights versions.
 
-Then open Claude Code in any repository and type `/defrost-setup`, or run it in a terminal:
+### Set up the memory in a new repository
 
-```sh
-defrost setup          # asks 3 questions; press Enter for the recommended answer
-defrost setup --yes    # no questions, recommended answers
-```
+Once per machine: the install line above. Then, once per repository:
+
+1. **Make it a git repository** if it is not one yet (`git init`): the refreshes after commits and merges use git
+   hooks.
+2. **See the recommended doc trust** (optional; setup asks anyway):
+
+   ```sh
+   cd /path/to/repo
+   defrost setup . --suggest-trust     # prints the suggestion, the reason and any stored level; changes nothing
+   ```
+3. **Set it up**, in Claude Code or in a terminal:
+   - In Claude Code: `claude`, then type `/defrost-setup`. It asks the three questions below and builds the memory.
+   - In a terminal:
+
+     ```sh
+     defrost setup                                           # asks the 3 questions; Enter takes the recommended one
+     defrost setup --yes --profile standard --doc-trust low  # no questions (code-heavy repository)
+     defrost setup --yes --profile standard --doc-trust high # no questions (docs repository)
+     ```
+     `--yes` needs `--doc-trust` for a new repository. Add `--claude` to also write the MCP server and slash
+     commands into this project's own config.
+4. **Check it**: `defrost status` lists the repository with its sections and "up to date", and
+   `defrost search "how does <something> work?"` returns cited sections. In a Claude Code session that was already
+   open, run `/mcp` and reconnect `defrost` first.
+5. **Commit** what setup added (`CLAUDE.md`, `.claude/settings.json`, `docs/`) so teammates get it; see
+   **Teammates** below.
 
 The three questions:
 
@@ -140,8 +162,8 @@ Upgrade: run the install line again (the resident service restarts itself on the
 
 **Teammates.** Commit what setup adds (`CLAUDE.md`, `.claude/settings.json`, `docs/`). The Claude hooks call
 `defrost` from `PATH` and do nothing where defrost is not installed, so a fresh clone works in Claude Code right away.
-Each teammate then runs the install line once and `defrost setup --yes --domain <name>` in their clone: the index and
-the git hooks are per machine and never committed.
+Each teammate then runs the install line once and `defrost setup --yes --domain <name> --doc-trust <low|high>` in
+their clone, with the level the project uses: the index and the git hooks are per machine and never committed.
 
 ## Search modes
 
