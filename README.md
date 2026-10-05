@@ -448,6 +448,12 @@ What is different from the parts it is built on:
 
 The research behind the rules: [docs/WRITING_FOR_EXTRACTION.md](docs/WRITING_FOR_EXTRACTION.md).
 
+The same rules ship as a standalone agent skill that needs no defrost install:
+[`skills/extraction-ready-docs/`](skills/extraction-ready-docs/SKILL.md). Copy the folder to `~/.claude/skills/` and
+Claude applies the rules whenever it writes docs; `python skills/extraction-ready-docs/scripts/install.py <project>`
+sets a project up (`--agents-md` also writes `AGENTS.md`). It writes the same `CLAUDE.md` block, between the same
+markers, as `defrost setup`.
+
 ## Weights
 
 The LoRA adapters (MNTP, CGSA, Defrost-Ret-B, Defrost-Rerank v2 + score head, about 140 MB) are attached to the

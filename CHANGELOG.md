@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Doc rules as a standalone skill:** `skills/extraction-ready-docs/` packages the doc-writing rules, templates,
+  linter and Facts extractor as an agent skill that works without defrost. Its `scripts/install.py` is Python-only
+  (macOS, Linux, Windows), can also write `AGENTS.md`, and removes the block with `--remove`. Its linter accepts
+  directories and skips `templates/` and `DOC_RULES.md`.
+
 ## 1.2.1 (2026-10-02)
 
 - **Questions are answered from the memory in one turn:** a Claude Code `UserPromptSubmit` hook
