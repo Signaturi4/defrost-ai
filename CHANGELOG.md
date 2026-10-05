@@ -2,7 +2,10 @@
 
 ## Unreleased
 
-- **Doc rules as a standalone skill:** `skills/extraction-ready-docs/` packages the doc-writing rules, templates,
+- **The skill lives in its own repository:** `skills/knowledge_lifecycle_skill/` is a git submodule of
+  [knowledge_lifecycle_skill](https://github.com/Signaturi4/knowledge_lifecycle_skill), so defrost carries exactly
+  the published skill, tests and evals; the copies under `skills/extraction-ready-docs/` and `skills/tests/` are gone.
+- **Doc rules as a standalone skill:** `extraction-ready-docs/` packages the doc-writing rules, templates,
   linter and Facts extractor as an agent skill that works without defrost. Its `scripts/install.py` is Python-only
   (macOS, Linux, Windows), can also write `AGENTS.md`, and removes the block with `--remove`. Its linter accepts
   directories and skips `templates/` and `DOC_RULES.md`.
@@ -14,8 +17,8 @@
   and references. `install.py` is one command for any repository (it creates the `docs/README.md` map and
   updates `AGENTS.md` when present), plus `--defrost` (linters, lint rule and defrost markers) and an optional
   `--lifecycle`. After installing it scans every `.md` file (`scripts/audit.py`) and splits the work into in-place
-  fixes, applied right away, and renames/moves/merges, proposed for a yes. Tests and behaviour evals live in
-  `skills/tests/extraction-ready-docs/`, outside the package.
+  fixes, applied right away, and renames/moves/merges, proposed for a yes. Tests and behaviour evals live in the
+  skill repository's `tests/`, outside the package.
 
 ## 1.2.1 (2026-10-02)
 

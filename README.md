@@ -449,11 +449,13 @@ What is different from the parts it is built on:
 The research behind the rules: [docs/WRITING_FOR_EXTRACTION.md](docs/WRITING_FOR_EXTRACTION.md).
 
 The same rules ship as a standalone agent skill that needs no defrost install:
-[`skills/extraction-ready-docs/`](skills/extraction-ready-docs/SKILL.md). Copy the folder to `~/.claude/skills/` and
-Claude applies the rules whenever it writes docs; `python skills/extraction-ready-docs/scripts/install.py <project>`
-sets a project up in any repository (it also updates `AGENTS.md` when one exists). Add `--defrost` in a project
-indexed by defrost: the installer then also copies the linters and writes its block between the same markers as
-`defrost setup`.
+[knowledge_lifecycle_skill](https://github.com/Signaturi4/knowledge_lifecycle_skill), included here as the git
+submodule `skills/knowledge_lifecycle_skill/` (clone with `--recurse-submodules`, or run
+`git submodule update --init`). Copy its `extraction-ready-docs/` folder to `~/.claude/skills/` and Claude applies
+the rules whenever it writes docs. `python skills/knowledge_lifecycle_skill/extraction-ready-docs/scripts/install.py
+<project>` sets a project up in any repository. Add `--defrost` in a project indexed by defrost: the installer then
+also copies the linters and writes its block between the same markers as `defrost setup`. To move to the skill's
+latest version: `git submodule update --remote skills/knowledge_lifecycle_skill`, then commit.
 
 ## Weights
 

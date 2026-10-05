@@ -1,3 +1,0 @@
-# Competitors
-
-Toggl, Harvest, Clockify.
