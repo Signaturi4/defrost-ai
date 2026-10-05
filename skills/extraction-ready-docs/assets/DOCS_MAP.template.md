@@ -14,7 +14,7 @@ The `docs/` folder holds every document of <project>, one home per file. Find th
 |---|---|
 | `DOC_RULES.md` | how to write a page |
 | `KNOWLEDGE_RULES.md` | where files live, names, versions, sources |
-| `decision-register.md` | every decision and open question |
+| `decision-register.md` (planned) | every decision and open question; created with the first decision |
 | `<folder>/` | <what it owns> |
 
 Templates for new pages are in `templates/`.

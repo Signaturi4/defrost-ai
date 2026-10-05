@@ -451,8 +451,9 @@ The research behind the rules: [docs/WRITING_FOR_EXTRACTION.md](docs/WRITING_FOR
 The same rules ship as a standalone agent skill that needs no defrost install:
 [`skills/extraction-ready-docs/`](skills/extraction-ready-docs/SKILL.md). Copy the folder to `~/.claude/skills/` and
 Claude applies the rules whenever it writes docs; `python skills/extraction-ready-docs/scripts/install.py <project>`
-sets a project up (`--agents-md` also writes `AGENTS.md`). It writes the same `CLAUDE.md` block, between the same
-markers, as `defrost setup`.
+sets a project up in any repository (it also updates `AGENTS.md` when one exists). Add `--defrost` in a project
+indexed by defrost: the installer then also copies the linters and writes its block between the same markers as
+`defrost setup`.
 
 ## Weights
 

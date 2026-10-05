@@ -23,15 +23,18 @@ Run the installer from this skill's folder against the project root. It needs on
 Windows, `python3` on macOS and Linux).
 
 ```sh
-python <skill-dir>/scripts/install.py <project>                     # general mode, lifecycle per-document
-python <skill-dir>/scripts/install.py <project> --lifecycle living  # or: versioned
-python <skill-dir>/scripts/install.py <project> --agents-md         # also AGENTS.md for non-Claude agents
-python <skill-dir>/scripts/install.py <project> --scaffold          # also docs/README.md map + decision register
-python <skill-dir>/scripts/install.py <project> --remove            # take the block out again
+python <skill-dir>/scripts/install.py <project>              # set up (any repository)
+python <skill-dir>/scripts/install.py <project> --defrost    # defrost-ai projects only
+python <skill-dir>/scripts/install.py <project> --remove     # undo the rule block
 ```
 
-**General mode** (the default) fits any repository. It copies both rule files to `docs/`, the templates to
-`docs/templates/`, and puts an eight-rule block at the end of `CLAUDE.md`. The block is short on purpose:
+Optional on set-up: `--lifecycle living` or `--lifecycle versioned` (see below).
+
+**Set-up** fits any repository. It copies both rule files to `docs/`, the templates to `docs/templates/`, creates
+the `docs/README.md` map if it is missing, and puts an eight-rule block at the end of `CLAUDE.md` — and of
+`AGENTS.md` when the project has one, for non-Claude agents. Fill in the map's placeholders for the project. The
+decision register is not created up front: create it from its template when the first decision is recorded. The
+block is short on purpose:
 `CLAUDE.md` loads into every session, so it holds only what an agent must never skip, plus pointers to the full
 rules, which are read only when a doc is written or a file is moved. Don't `@import` the rule files from
 `CLAUDE.md`; that loads them into every session.

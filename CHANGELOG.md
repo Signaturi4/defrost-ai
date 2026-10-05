@@ -11,8 +11,9 @@
   files), a lifecycle per file (`living`, `versioned` with `archive/`, `immutable`; default: the agent decides per
   page), `source: true` files with a Sources section, text twins for binaries, a decision register, folder splits
   and safe moves. New `scripts/repo_lint.py` checks names, duplicate copies and entities, lifecycle, indexes, twins
-  and references. `install.py` gains `--lifecycle`, `--scaffold` and `--defrost` (linters, lint rule and defrost
-  markers only in defrost mode; general mode works in any repository). Tests and behaviour evals live in
+  and references. `install.py` is one command for any repository (it creates the `docs/README.md` map and
+  updates `AGENTS.md` when present), plus `--defrost` (linters, lint rule and defrost markers) and an optional
+  `--lifecycle`. Tests and behaviour evals live in
   `skills/tests/extraction-ready-docs/`, outside the package.
 
 ## 1.2.1 (2026-10-02)

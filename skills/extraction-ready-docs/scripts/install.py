@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 """Install the documentation rules into a project (stdlib only; macOS, Linux and Windows).
 
-    python install.py <project>                                  # general: rules + templates + CLAUDE.md block
-    python install.py <project> --lifecycle living               # pick the lifecycle mode (default: per-document)
-    python install.py <project> --agents-md                      # also AGENTS.md (Codex, Cursor, other agents)
-    python install.py <project> --scaffold                       # also docs/README.md map + decision register
-    python install.py <project> --defrost                        # defrost mode: + linters, lint rule, defrost markers
-    python install.py <project> --remove                         # take the block out again (copied files stay)
+    python install.py <project>              # set up (any repository)
+    python install.py <project> --defrost    # defrost-ai projects: + linters and the lint rule
+    python install.py <project> --remove     # take the rule block out again (copied files stay)
+    optional: --lifecycle living | versioned (default per-document: the agent picks per file)
 
-General mode works in any repository and needs nothing but this script. It copies `DOC_RULES.md` and
-`KNOWLEDGE_RULES.md` to `docs/`, the templates to `docs/templates/`, and puts a short rule block at the end of
-`CLAUDE.md`. Defrost mode is for projects indexed by defrost-ai: it also copies the linters and the Facts extractor
+Set-up copies `DOC_RULES.md` and `KNOWLEDGE_RULES.md` to `docs/`, the templates to `docs/templates/`, creates the
+`docs/README.md` map if it is missing (never overwritten), and puts a short rule block at the end of `CLAUDE.md` —
+and of `AGENTS.md` too when the project has one. The decision register is created from its template when the first
+decision is recorded, so no placeholder page is added. Defrost mode is for projects indexed by defrost-ai: it also copies the linters and the Facts extractor
 to `docs/tools/`, adds a "lint before you finish" rule, and uses defrost-ai's block markers so `defrost setup` and
 this installer update the same block. Re-running replaces the block instead of duplicating it."""
 import argparse
@@ -67,16 +66,13 @@ def main(argv=None):
     ap.add_argument("project", nargs="?", default=".")
     ap.add_argument("--lifecycle", choices=sorted(MODE_RULE), default="per-document",
                     help="how files change: per-document (default; the agent decides per page), living, versioned")
-    ap.add_argument("--agents-md", action="store_true", help="also place the block in AGENTS.md")
-    ap.add_argument("--scaffold", action="store_true", help="create docs/README.md and docs/decision-register.md "
-                                                            "from templates if missing")
     ap.add_argument("--defrost", action="store_true", help="defrost-ai mode: linters, lint rule, defrost markers")
     ap.add_argument("--remove", action="store_true", help="remove the block from CLAUDE.md / AGENTS.md")
     a = ap.parse_args(argv)
     root = Path(a.project).resolve()
     if not root.is_dir():
         raise SystemExit(f"not a directory: {root}")
-    targets = [root / "CLAUDE.md"] + ([root / "AGENTS.md"] if a.agents_md else [])
+    targets = [root / "CLAUDE.md"] + ([root / "AGENTS.md"] if (root / "AGENTS.md").exists() else [])
     if a.remove:
         for md in targets:
             print(f"{md.name}: block {place_block(md, None)}")
@@ -87,9 +83,7 @@ def main(argv=None):
     for t in ("PAGE.template.md", "GLOSSARY.template.md", "README.index.template.md",
               "DECISION_REGISTER.template.md", "CODES.template.md", "ARCHIVE_BANNER.md"):
         copy(assets / t, docs / "templates" / t, root)
-    if a.scaffold:
-        copy(assets / "DOCS_MAP.template.md", docs / "README.md", root, overwrite=False)
-        copy(assets / "DECISION_REGISTER.template.md", docs / "decision-register.md", root, overwrite=False)
+    copy(assets / "DOCS_MAP.template.md", docs / "README.md", root, overwrite=False)
     if a.defrost:
         for tool in ("doc_lint.py", "repo_lint.py", "extract_facts.py"):
             copy(SKILL / "scripts" / tool, docs / "tools" / tool, root)
