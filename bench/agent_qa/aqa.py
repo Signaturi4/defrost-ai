@@ -234,7 +234,11 @@ the same docs; treat either naming as valid.
 Question: {q}
 Ground truth: {truth}
 Evidence: {evidence}
+Key points (ALL needed for correctness 2; some of them = 1; none or a wrong main claim = 0): {key}
+Optional points (never required; do not lower the score when missing): {optional}
 Known stale claims (wrong today): {stale}
+Extra true details beyond the ground truth are not errors. Only call something a hallucination if it is false per
+the ground truth and evidence, not merely absent from them.
 
 Answer to grade:
 <<<
@@ -252,6 +256,8 @@ Return only a JSON object:
 
 def ask_judge(cfg, q, row):
     prompt = JUDGE.format(q=q["q"], truth=q["truth"], evidence="; ".join(q.get("evidence", [])),
+                          key="; ".join(q.get("key_points", [])) or "(the ground truth as a whole)",
+                          optional="; ".join(q.get("optional_points", [])) or "none",
                           stale="; ".join(q.get("stale", [])) or "none", answer=row["answer"] or "(no answer)")
     with tempfile.TemporaryDirectory() as empty:        # nothing to read: the judge only grades
         p = subprocess.run(["claude", "-p", prompt, "--model", cfg["judge_model"], "--output-format", "json",
