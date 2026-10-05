@@ -44,7 +44,17 @@ def extract(path):
                    "object_code": code(o), "path": str(path), "line": n, "section": section}
 
 
+
+def utf8_stdout():
+    """Windows consoles default to a legacy code page; `→` and other text must not crash the output."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
 def main(args):
+    utf8_stdout()
     files = []
     for a in args or ["docs"]:
         p = Path(a)

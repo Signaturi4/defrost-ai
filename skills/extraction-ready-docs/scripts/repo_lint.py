@@ -325,7 +325,17 @@ def lint_repo(root, docs="docs", mode=None, max_files=12, prefix_min=3) -> list:
     return issues
 
 
+
+def utf8_stdout():
+    """Windows consoles default to a legacy code page; `→` and other text must not crash the output."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
 def main(argv=None):
+    utf8_stdout()
     ap = argparse.ArgumentParser(description="Lint the knowledge layer of a docs tree (KNOWLEDGE_RULES.md).")
     ap.add_argument("root", nargs="?", default=".")
     ap.add_argument("--docs", default="docs", help="docs folder, relative to root (default: docs)")

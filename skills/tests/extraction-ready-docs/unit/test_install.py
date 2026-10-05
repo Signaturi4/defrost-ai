@@ -32,7 +32,7 @@ class InstallTests(unittest.TestCase):
             self.assertTrue((self.root / rel).exists(), rel)
         self.assertFalse((self.root / "docs/tools").exists())   # linters are defrost-only
         self.assertFalse((self.root / "AGENTS.md").exists())    # never created
-        cm = (self.root / "CLAUDE.md").read_text()
+        cm = (self.root / "CLAUDE.md").read_text(encoding="utf-8")
         self.assertIn("<!-- extraction-ready-docs:start -->", cm)
         self.assertIn("Lifecycle mode: per-document", cm)
         self.assertNotIn("doc_lint.py", cm)
@@ -43,26 +43,26 @@ class InstallTests(unittest.TestCase):
         (self.root / "docs/README.md").write_text("# our map\n")
         (self.root / "CLAUDE.md").write_text("# Project\n\nUse pnpm.\n")
         run(self.root)
-        self.assertEqual("# ours\n", (self.root / "docs/decision-register.md").read_text())
-        self.assertEqual("# our map\n", (self.root / "docs/README.md").read_text())
-        self.assertTrue((self.root / "CLAUDE.md").read_text().startswith("# Project\n\nUse pnpm.\n\n"))
+        self.assertEqual("# ours\n", (self.root / "docs/decision-register.md").read_text(encoding="utf-8"))
+        self.assertEqual("# our map\n", (self.root / "docs/README.md").read_text(encoding="utf-8"))
+        self.assertTrue((self.root / "CLAUDE.md").read_text(encoding="utf-8").startswith("# Project\n\nUse pnpm.\n\n"))
 
     def test_agents_md_updated_only_when_present(self):
         (self.root / "AGENTS.md").write_text("# Agents\n")
         run(self.root)
-        self.assertIn("extraction-ready-docs:start", (self.root / "AGENTS.md").read_text())
+        self.assertIn("extraction-ready-docs:start", (self.root / "AGENTS.md").read_text(encoding="utf-8"))
 
     def test_rerun_replaces_block_and_lifecycle_option(self):
         run(self.root)
         run(self.root, "--lifecycle", "living")
-        cm = (self.root / "CLAUDE.md").read_text()
+        cm = (self.root / "CLAUDE.md").read_text(encoding="utf-8")
         self.assertEqual(1, cm.count(":start -->"))
         self.assertIn("Lifecycle mode: living", cm)
 
     def test_defrost_mode_adds_linters_rule_and_markers(self):
         run(self.root)
         run(self.root, "--defrost")
-        cm = (self.root / "CLAUDE.md").read_text()
+        cm = (self.root / "CLAUDE.md").read_text(encoding="utf-8")
         self.assertEqual(1, cm.count(":start -->"))               # general block replaced, not duplicated
         self.assertIn("<!-- defrost-ai:doc-rules:start -->", cm)
         self.assertIn("doc_lint.py", cm)
@@ -73,7 +73,7 @@ class InstallTests(unittest.TestCase):
         (self.root / "CLAUDE.md").write_text("# Project\n\nUse pnpm.\n")
         run(self.root)
         run(self.root, "--remove")
-        self.assertEqual("# Project\n\nUse pnpm.\n", (self.root / "CLAUDE.md").read_text())
+        self.assertEqual("# Project\n\nUse pnpm.\n", (self.root / "CLAUDE.md").read_text(encoding="utf-8"))
 
     def test_fresh_install_lints_clean(self):
         run(self.root, "--defrost")
@@ -81,6 +81,18 @@ class InstallTests(unittest.TestCase):
                            text=True)
         self.assertEqual(0, r.returncode, r.stdout)
         self.assertIn("0 error(s), 0 warning(s)", r.stdout)
+
+    def test_scripts_print_arrows_without_crashing(self):
+        """Facts lines hold `→`; a Windows console with a legacy code page must not crash the scripts."""
+        doc = self.root / "page.md"
+        doc.write_text("---\ntype: reference\nentity: page\nstatus: current\nupdated: 2026-10-05\n---\n# Page\n\n"
+                       "## Retry\n\nText.\n\nFacts:\n- `Worker` → retries → jobs (≥ 5 times)\n- broken → line\n",
+                       encoding="utf-8")
+        env = {**__import__("os").environ, "PYTHONIOENCODING": "cp1252"}
+        for script, char in (("extract_facts.py", "≥"), ("doc_lint.py", "→")):   # neither is in cp1252
+            r = subprocess.run([sys.executable, str(SCRIPTS / script), str(doc)], capture_output=True, env=env)
+            self.assertNotIn(b"UnicodeEncodeError", r.stderr, script)
+            self.assertIn(char.encode("utf-8"), r.stdout, script)
 
     def test_removed_flags_are_rejected(self):
         for flag in ("--scaffold", "--agents-md"):

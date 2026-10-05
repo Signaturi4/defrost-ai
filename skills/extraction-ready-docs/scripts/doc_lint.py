@@ -115,7 +115,17 @@ def expand(args):
     return out
 
 
+
+def utf8_stdout():
+    """Windows consoles default to a legacy code page; `→` and other text must not crash the output."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
 def main(paths):
+    utf8_stdout()
     paths = expand(paths or ["docs"])
     n_err = 0
     for p in paths:

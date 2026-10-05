@@ -62,7 +62,17 @@ def audit(root, docs="docs", mode=None):
     return mode, {k: v for k, v in sorted(items.items()) if v["fix_in_place"] or v["needs_yes"]}
 
 
+
+def utf8_stdout():
+    """Windows consoles default to a legacy code page; `→` and other text must not crash the output."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
 def main(argv=None):
+    utf8_stdout()
     ap = argparse.ArgumentParser(description="Audit every Markdown file against the documentation rules.")
     ap.add_argument("project", nargs="?", default=".")
     ap.add_argument("--docs", default="docs")

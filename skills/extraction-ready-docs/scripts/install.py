@@ -63,7 +63,17 @@ def copy(src: Path, dst: Path, root: Path, overwrite=True):
     print(f"copied  {dst.relative_to(root).as_posix()}")
 
 
+
+def utf8_stdout():
+    """Windows consoles default to a legacy code page; `→` and other text must not crash the output."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
 def main(argv=None):
+    utf8_stdout()
     ap = argparse.ArgumentParser(description="Install the documentation rules into a project.")
     ap.add_argument("project", nargs="?", default=".")
     ap.add_argument("--lifecycle", choices=sorted(MODE_RULE), default="per-document",
