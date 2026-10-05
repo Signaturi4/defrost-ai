@@ -13,7 +13,8 @@
   and safe moves. New `scripts/repo_lint.py` checks names, duplicate copies and entities, lifecycle, indexes, twins
   and references. `install.py` is one command for any repository (it creates the `docs/README.md` map and
   updates `AGENTS.md` when present), plus `--defrost` (linters, lint rule and defrost markers) and an optional
-  `--lifecycle`. Tests and behaviour evals live in
+  `--lifecycle`. After installing it scans every `.md` file (`scripts/audit.py`) and splits the work into in-place
+  fixes, applied right away, and renames/moves/merges, proposed for a yes. Tests and behaviour evals live in
   `skills/tests/extraction-ready-docs/`, outside the package.
 
 ## 1.2.1 (2026-10-02)

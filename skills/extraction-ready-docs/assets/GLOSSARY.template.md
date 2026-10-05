@@ -26,8 +26,8 @@ Use only these relations in `Subject → relation → Object` lines. Add a row b
 | owns | responsible team or module | payments-team → owns → `PaymentService` |
 | configures | a setting changes behaviour | `MAX_RETRIES` → configures → webhook retries |
 | defaults to | default value | `MAX_RETRIES` → defaults to → 5 |
-| requires | precondition | `deploy.sh` → requires → `AWS_PROFILE` |
+| requires | precondition | `DeployJob` → requires → `AWS_PROFILE` |
 | replaces / deprecated by | lifecycle | `v1 API` → deprecated by → `v2 API` |
 | triggers / stops | causes / ends an event | HTTP 410 → stops → retries |
 | returns / raises | outputs and errors | `charge()` → raises → `CardDeclined` |
-| part of | containment | `retry.py` → part of → billing module |
+| part of | containment | `RetryPolicy` → part of → billing module |

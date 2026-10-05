@@ -45,7 +45,8 @@ def lint(path):
     fm = re.match(r"^---\n(.*?)\n---\n", text, re.S)
     page_type = None
     if not fm:
-        issues.append(("ERROR", 1, "missing YAML frontmatter (type, entity, status, updated)"))
+        level = "WARN" if Path(path).name == "README.md" else "ERROR"    # a landing README may skip it
+        issues.append((level, 1, "missing YAML frontmatter (type, entity, status, updated)"))
     else:
         m = re.search(r"^type:\s*([\w-]+)", fm.group(1), re.M)
         page_type = m.group(1) if m else None

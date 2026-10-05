@@ -211,6 +211,15 @@ class DocLintPageTests(unittest.TestCase):
         ok = page("maya", body + "\n## Sources\n\n- Interview with Maya, recorded 2026-10-12\n", source="true")
         self.assertFalse([m for lv, _, m in self.lint_text(ok) if lv == "ERROR"])
 
+    def test_readme_without_frontmatter_is_only_a_warning(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "README.md"
+            p.write_text("# Project\n\nLanding page.\n", encoding="utf-8")
+            self.assertFalse([m for lv, _, m in doc_lint.lint(p) if lv == "ERROR"])
+            q = Path(d) / "guide.md"
+            q.write_text("# Guide\n\nText.\n", encoding="utf-8")
+            self.assertTrue([m for lv, _, m in doc_lint.lint(q) if lv == "ERROR"])
+
     def test_invalid_lifecycle_value(self):
         errs = [m for lv, _, m in self.lint_text(page("a", lifecycle="forever")) if lv == "ERROR"]
         self.assertTrue(any("lifecycle" in m for m in errs), errs)

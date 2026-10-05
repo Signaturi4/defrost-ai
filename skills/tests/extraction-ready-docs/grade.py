@@ -12,7 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-SKILL_SCRIPTS = Path(__file__).resolve().parents[1] / "extraction-ready-docs" / "scripts"
+SKILL_SCRIPTS = Path(__file__).resolve().parents[2] / "extraction-ready-docs" / "scripts"
 NAME_OK = re.compile(r"^(?:[A-Z][A-Z0-9]*(?:_[A-Z][A-Z0-9]*)*_\d+-)?[a-z0-9]+(?:-[a-z0-9]+)*(?:--superseded-\d{4}-\d{2}-\d{2})?$")
 
 
@@ -138,7 +138,40 @@ def grade_messy(out: Path):
     ]
 
 
-GRADERS = {"setup-living-mode": grade_setup, "add-interview-source-file": grade_interview,
+def grade_existing(out: Path):
+    repo = out / "repo"
+    cm = read(repo / "CLAUDE.md")
+    setup, api = read(repo / "docs/setup.md"), read(repo / "docs/api-reference.md")
+    fs, fa = frontmatter(setup), frontmatter(api)
+    proposal = read(out / "questions.md") + "\n" + read(out / "final_message.md")
+    register = read(repo / "docs/decision-register.md")
+    docmap = read(repo / "docs/README.md")
+    errs = lint_errors([str(SKILL_SCRIPTS / "doc_lint.py"), str(repo / "docs/setup.md"), str(repo / "docs/api-reference.md")])
+    keep = {"setup": ["Node 20", "DATABASE_URL", "3000", "pnpm install"],
+            "api": ["createInvoice", "ROUNDING_MINUTES", "MissingRateError", "15"]}
+    lost = [k for k in keep["setup"] if k not in setup] + [k for k in keep["api"] if k not in api]
+    return [
+        check("Rules installed (CLAUDE.md block + docs/KNOWLEDGE_RULES.md), original CLAUDE.md kept",
+              ":start -->" in cm and "pnpm test" in cm and (repo / "docs/KNOWLEDGE_RULES.md").exists(), "block + rules"),
+        check("Both existing docs got frontmatter with type and lifecycle",
+              fs.get("type") and fs.get("lifecycle") and fa.get("type") and fa.get("lifecycle"),
+              f"setup {fs.get('type')}/{fs.get('lifecycle')}, api {fa.get('type')}/{fa.get('lifecycle')}"),
+        check("No fact was lost while rewriting (key values still present)", not lost, f"missing: {lost}"),
+        check("Identifiers are backticked in the API page",
+              "`createInvoice`" in api and "`MissingRateError`" in api and "`ROUNDING_MINUTES`" in api, "backticks"),
+        check("doc_lint reports no ERROR for the two fixed docs", not errs, errs[:2]),
+        check("notes/Meeting Notes.md was not moved or renamed without a yes", (repo / "notes/Meeting Notes.md").exists(),
+              "still at notes/Meeting Notes.md"),
+        check("The move/rename is proposed with a what-who-when name and the full date",
+              re.search(r"meeting[\w-]*2026-10-05[\w-]*\.md", proposal), (re.search(r"meeting[\w-]*\.md", proposal) or [None])[0]),
+        check("The Friday-invoice decision goes to the decision register",
+              "friday" in register.lower() or ("decision" in proposal.lower() and "register" in proposal.lower()),
+              "register row or proposal"),
+        check("The docs map lists both existing docs", "setup.md" in docmap and "api-reference.md" in docmap, "docs/README.md"),
+    ]
+
+
+GRADERS = {"install-and-update-existing-docs": grade_existing, "setup-living-mode": grade_setup, "add-interview-source-file": grade_interview,
            "messy-folder-propose-first": grade_messy}
 
 

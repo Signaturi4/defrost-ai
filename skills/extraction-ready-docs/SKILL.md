@@ -31,10 +31,10 @@ python <skill-dir>/scripts/install.py <project> --remove     # undo the rule blo
 Optional on set-up: `--lifecycle living` or `--lifecycle versioned` (see below).
 
 **Set-up** fits any repository. It copies both rule files to `docs/`, the templates to `docs/templates/`, creates
-the `docs/README.md` map if it is missing, and puts an eight-rule block at the end of `CLAUDE.md` — and of
-`AGENTS.md` when the project has one, for non-Claude agents. Fill in the map's placeholders for the project. The
-decision register is not created up front: create it from its template when the first decision is recorded. The
-block is short on purpose:
+the `docs/README.md` map and `docs/decision-register.md` when they are missing (existing files are never
+overwritten), and puts an eight-rule block at the end of `CLAUDE.md` — and of `AGENTS.md` when the project has one,
+for non-Claude agents. Fill in the placeholders in the map and the register for the project. The block is short on
+purpose:
 `CLAUDE.md` loads into every session, so it holds only what an agent must never skip, plus pointers to the full
 rules, which are read only when a doc is written or a file is moved. Don't `@import` the rule files from
 `CLAUDE.md`; that loads them into every session.
@@ -52,8 +52,25 @@ Facts extractor to `docs/tools/`, adds a ninth rule ("lint before you finish"), 
 defrost-ai's markers so `defrost setup` and this installer update the same block. Don't use it elsewhere.
 
 Re-running replaces the block instead of duplicating it. If the project's `CLAUDE.md` already holds hand-written
-doc rules, merge them into the block's wording rather than leaving two rule sets. Tell the user to commit
-`CLAUDE.md` and `docs/` so teammates and future sessions get the rules.
+doc rules, merge them into the block's wording rather than leaving two rule sets.
+
+**Then bring the existing docs in line.** The installer ends by scanning every `.md` file in the repository
+(skipping `CLAUDE.md`, `AGENTS.md`, `CHANGELOG.md`, vendored folders and templates). Get the full list with
+`python <skill-dir>/scripts/audit.py <project>`; it splits the work in two:
+
+- **fix** items change only the inside of a file — add frontmatter (choose `type`, `entity`, `lifecycle` and
+  `source` per page), rename vague headings, split or merge sections, shorten long sentences, backtick
+  identifiers, add Facts blocks, add the file to its folder index and the docs map, fix broken references. Apply
+  these right away, keeping the meaning identical. Pages marked `lifecycle: immutable` (raw sources) get frontmatter
+  and, when `source: true`, an appended `## Sources` section — nothing else; their body is evidence and stays
+  untouched, even if it breaks the writing rules. A landing `README.md` keeps its own shape.
+- **ASK** items change paths other people rely on — renames, moves into `docs/`, merges of duplicate copies,
+  folder splits. List them as one proposal (old path → new path, and why) and wait for a yes; then follow
+  KNOWLEDGE_RULES §8. Decisions found in old notes go to the decision register.
+
+In a large repository, work folder by folder and say how far you got. Rerun the audit at the end: no ERROR should
+remain in the files you fixed. Tell the user to commit `CLAUDE.md` and `docs/` so teammates and future sessions get
+the rules.
 
 ## Job 2: write, organise and maintain docs by the rules
 

@@ -7,15 +7,17 @@
     optional: --lifecycle living | versioned (default per-document: the agent picks per file)
 
 Set-up copies `DOC_RULES.md` and `KNOWLEDGE_RULES.md` to `docs/`, the templates to `docs/templates/`, creates the
-`docs/README.md` map if it is missing (never overwritten), and puts a short rule block at the end of `CLAUDE.md` —
-and of `AGENTS.md` too when the project has one. The decision register is created from its template when the first
-decision is recorded, so no placeholder page is added. Defrost mode is for projects indexed by defrost-ai: it also copies the linters and the Facts extractor
+`docs/README.md` map and `docs/decision-register.md` when they are missing (existing files are never overwritten),
+and puts a short rule block at the end of `CLAUDE.md` — and of `AGENTS.md` too when the project has one. Defrost mode is for projects indexed by defrost-ai: it also copies the linters and the Facts extractor
 to `docs/tools/`, adds a "lint before you finish" rule, and uses defrost-ai's block markers so `defrost setup` and
 this installer update the same block. Re-running replaces the block instead of duplicating it."""
 import argparse
 import re
 import shutil
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 SKILL = Path(__file__).resolve().parent.parent
 MARKERS = {"general": "extraction-ready-docs", "defrost": "defrost-ai:doc-rules"}
@@ -84,6 +86,7 @@ def main(argv=None):
               "DECISION_REGISTER.template.md", "CODES.template.md", "ARCHIVE_BANNER.md"):
         copy(assets / t, docs / "templates" / t, root)
     copy(assets / "DOCS_MAP.template.md", docs / "README.md", root, overwrite=False)
+    copy(assets / "DECISION_REGISTER.template.md", docs / "decision-register.md", root, overwrite=False)
     if a.defrost:
         for tool in ("doc_lint.py", "repo_lint.py", "extract_facts.py"):
             copy(SKILL / "scripts" / tool, docs / "tools" / tool, root)
@@ -91,6 +94,14 @@ def main(argv=None):
     for md in targets:
         print(f"{md.name}: rule block {place_block(md, snippet)} "
               f"({'defrost' if a.defrost else 'general'} mode, lifecycle {a.lifecycle})")
+    import audit                                                # scan every existing .md against the rules
+    _, items = audit.audit(root, mode=a.lifecycle)
+    n_fix = sum(len(v["fix_in_place"]) for v in items.values())
+    n_yes = sum(len(v["needs_yes"]) for v in items.values())
+    print(f"\nnext: {len(items)} existing Markdown file(s) to bring in line — {n_fix} fix(es) to apply in place, "
+          f"{n_yes} rename/move/merge proposal(s) that need a yes.")
+    if items:
+        print(f"      full list: python {Path(__file__).with_name('audit.py')} {root}")
 
 
 if __name__ == "__main__":

@@ -5,8 +5,8 @@ used to keep its behaviour consistent between versions.
 
 | layer | what it checks | how to run |
 |---|---|---|
-| `unit/` | the linters (`repo_lint.py`, the page checks in `doc_lint.py`) on throwaway fixture trees | `python -m unittest discover -s skills/tests/extraction-ready-docs/unit` |
-| `evals/` + `fixtures/` + `grade.py` | what an agent **does** with the skill: three realistic tasks, each run with and without the skill | see below |
+| `unit/` | the linters (`repo_lint.py`, `doc_lint.py`), the post-install audit (`audit.py`) and the installer, on throwaway fixture trees | `python -m unittest discover -s skills/tests/extraction-ready-docs/unit` |
+| `evals/` + `fixtures/` + `grade.py` | what an agent **does** with the skill: four realistic tasks, each run with and without the skill | see below |
 
 ## Behaviour evals
 
@@ -26,6 +26,12 @@ instead of asking, so "asks before moving files" is testable.
 | `setup-living-mode` | install in general mode with lifecycle `living`, keep the existing `CLAUDE.md`, add no defrost tooling |
 | `add-interview-source-file` | create one `interview-maya-2026-10-12.md` with `source: true`, `lifecycle: immutable`, a Sources section, an index line, and no invented quotes |
 | `messy-folder-propose-first` | move nothing before a yes, propose rule-following names with full dates, merge the duplicate copies, add a text twin and a decision register |
+| `install-and-update-existing-docs` | install, then fix every existing `.md` in place without losing a fact (frontmatter, backticks, lint clean), list the docs in the map, record the old meeting decision in the register, and only propose the rename and move of `notes/Meeting Notes.md` |
 
-Iteration 1 (2026-10-05): with the skill 100% of assertions passed (2 runs per task, identical scores); without
-it, 49%.
+Results (2026-10-05), 2 runs per task with the skill, 1 without:
+
+| iteration | tasks | with the skill | without |
+|---|---|---|---|
+| 1 | 1–3 | 100% (identical scores across runs) | 49% |
+| 2 | 1–3 (simplified installer) | 100% (identical) | 49% |
+| 3 | 4 (post-install scan) | 100% (identical) | 22% |

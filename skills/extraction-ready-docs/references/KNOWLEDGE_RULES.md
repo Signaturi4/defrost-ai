@@ -77,7 +77,8 @@ with `_v2`, `-final`, `.bak` or a date suffix. Old versions come from `git log -
 
 Search tools and agents skip `archive/`.
 
-**Immutable page:** never edit it after saving. Corrections go in a separate note that links to it.
+**Immutable page:** never edit its body after saving, even to meet the writing rules. You may add frontmatter and
+an appended `## Sources` section. Corrections go in a separate note that links to it.
 
 **Replaced page:** set `status: deprecated` and `replaced_by: <path>` for one review cycle, then delete it.
 
