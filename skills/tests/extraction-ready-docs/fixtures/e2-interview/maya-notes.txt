@@ -1,0 +1,6 @@
+call w/ Maya, 12 oct 2026, she's 29, freelance designer, tracks her hours in a spreadsheet
+- sends invoices every friday for the whole week
+- "I hate copying my hours into the invoice tool, it takes 20 minutes"
+- uses Toggl sometimes, mostly the spreadsheet
+- would pay maybe 5 eur/month if it builds the invoice automatically
+- doesn't trust AI time estimates, wants her own rates

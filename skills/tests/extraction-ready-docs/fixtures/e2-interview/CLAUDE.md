@@ -1,3 +1,6 @@
+# Timekit app
+
+<!-- extraction-ready-docs:start -->
 ## ⚠️ IMPORTANT: documentation rules (read before writing, editing, moving or renaming any doc)
 
 **Before you create or change any documentation file (`*.md`, `*.rst`, `docs/**`, READMEs, ADRs), read
@@ -12,7 +15,7 @@ sources).** Short version:
 6. **One home, clear names:** check `docs/README.md` before creating a file and extend the existing one; name files
    what-who-when in lowercase hyphens with full `YYYY-MM-DD` dates; never make `_v2` / `final` / `.bak` copies;
    never move or rename files unasked.
-7. **Lifecycle mode: {{MODE}}** — {{MODE_RULE}}
+7. **Lifecycle mode: per-document** — choose `lifecycle: living | versioned | immutable` for each page with the table in `docs/KNOWLEDGE_RULES.md` §3 and write it into the frontmatter.
 8. **Sources:** a file with `source: true` lists where each fact came from in `## Sources`; every other file cites
    the source file; never invent a quote, number or reference.
-{{CHECK}}
+<!-- extraction-ready-docs:end -->

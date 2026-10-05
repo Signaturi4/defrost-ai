@@ -6,6 +6,14 @@
   linter and Facts extractor as an agent skill that works without defrost. Its `scripts/install.py` is Python-only
   (macOS, Linux, Windows), can also write `AGENTS.md`, and removes the block with `--remove`. Its linter accepts
   directories and skips `templates/` and `DOC_RULES.md`.
+- **Knowledge-management rules in the skill:** `references/KNOWLEDGE_RULES.md` adds one home per file (docs map and
+  folder indexes), what-who-when file names with full `YYYY-MM-DD` dates (optional `docs/CODES.md` prefixes for 100+
+  files), a lifecycle per file (`living`, `versioned` with `archive/`, `immutable`; default: the agent decides per
+  page), `source: true` files with a Sources section, text twins for binaries, a decision register, folder splits
+  and safe moves. New `scripts/repo_lint.py` checks names, duplicate copies and entities, lifecycle, indexes, twins
+  and references. `install.py` gains `--lifecycle`, `--scaffold` and `--defrost` (linters, lint rule and defrost
+  markers only in defrost mode; general mode works in any repository). Tests and behaviour evals live in
+  `skills/tests/extraction-ready-docs/`, outside the package.
 
 ## 1.2.1 (2026-10-02)
 

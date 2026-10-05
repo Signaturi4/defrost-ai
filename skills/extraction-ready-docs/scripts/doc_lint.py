@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 TYPES = {"tutorial", "how-to", "reference", "explanation"}
+LIFECYCLES = {"living", "versioned", "immutable"}
 PRONOUN_OPEN = re.compile(r"^(it|this|these|they|those|here|as (mentioned|noted|described) above)\b", re.I)
 FACT = re.compile(r"^- (.+?) (?:→|->) (.+?) (?:→|->) (.+?)(?: \((.*)\))?\s*$")
 CODEWORD = re.compile(r"(?<![`\w/])([a-z]+_[a-z0-9_]+|[a-z]+[A-Z]\w+|[A-Z][a-z]+[A-Z]\w*|\w+\(\))(?![`\w])")
@@ -50,6 +51,15 @@ def lint(path):
         page_type = m.group(1) if m else None
         if page_type not in TYPES:
             issues.append(("ERROR", 1, f"frontmatter type must be one of {sorted(TYPES)}"))
+        m = re.search(r"^lifecycle:\s*([\w-]+)", fm.group(1), re.M)
+        if m and m.group(1) not in LIFECYCLES:
+            issues.append(("ERROR", 1, f"frontmatter lifecycle must be one of {sorted(LIFECYCLES)}"))
+        m = re.search(r"^source:\s*(\w+)", fm.group(1), re.M)
+        if m and m.group(1).lower() in ("true", "yes"):
+            src = re.search(r"^#{1,6}\s+Sources\s*$(.*?)(?=^#{1,6}\s|\Z)", text[fm.end():], re.M | re.S)
+            if not src or not re.search(r"^\s*[-*]\s+\S", src.group(1), re.M):
+                issues.append(("ERROR", 1, "source: true page needs a '## Sources' section listing where each "
+                                           "fact came from (person + date, link + date read, or dataset)"))
     body = text[fm.end():] if fm else text
     offset = text[:fm.end()].count("\n") if fm else 0
     for head, line, buf in sections(body):
@@ -99,7 +109,7 @@ def expand(args):
     out = []
     for a in args:
         p = Path(a)
-        out += [f for f in sorted(p.rglob("*.md")) if "templates" not in f.parts and f.name != "DOC_RULES.md"] \
+        out += [f for f in sorted(p.rglob("*.md")) if "templates" not in f.parts and f.name not in ("DOC_RULES.md", "KNOWLEDGE_RULES.md")] \
             if p.is_dir() else [p]
     return out
 
