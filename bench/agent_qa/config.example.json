@@ -1,0 +1,15 @@
+{
+ "repo": "/path/to/your/project",
+ "questions": "questions.json",
+ "out": "out",
+ "base": "/tmp/aqa",
+ "strip": ["bench-answers", "docs/research/*-case-study-*.md"],
+ "model": "claude-sonnet-5",
+ "judge_model": "claude-opus-5-5",
+ "repeats": 3,
+ "arms": {
+  "before/plain": {"ref": "docs-before", "claude_md": true},
+  "clean/defrost": {"ref": "docs-after", "claude_md": true, "skills": true,
+                    "defrost": {"domain": "aqa-after", "mcp": true, "hook": true}}
+ }
+}

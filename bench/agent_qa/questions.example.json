@@ -1,0 +1,13 @@
+{
+ "questions": [
+  {"id": "Q01", "kind": "stale-trap", "q": "Which background jobs exist, and how many steps does each have?",
+   "truth": "Two jobs: import (4 steps) and export (3 steps). The docs still list a third job that was removed.",
+   "evidence": ["jobs/import/step*.py", "jobs/export/step*.py", "decision D-04 removed the sync job"],
+   "stale": ["a sync job exists"]},
+  {"id": "Q02", "kind": "conflict-trap", "q": "What is the request timeout?",
+   "truth": "The sources disagree: the config reference says 30 s, settings.py:12 sets 10 s. A correct answer reports both and names the code value as the one in effect.",
+   "evidence": ["app/settings.py:12", "docs/config.md:40"]},
+  {"id": "Q03", "kind": "navigation", "q": "Where is the API contract, and how is it regenerated?",
+   "truth": "docs/openapi.json, written by `python -m app.export_openapi`.", "evidence": ["app/export_openapi.py:9"]}
+ ]
+}
