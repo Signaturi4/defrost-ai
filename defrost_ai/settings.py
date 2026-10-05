@@ -45,6 +45,8 @@ SETTINGS = [
     Setting("prompt_context.min_cosine", 0.34, (), "DEFROST_PROMPT_MIN_COSINE",
             "the prompt hook adds memory sections to a question only when the best one is at least this similar "
             "(0-1; higher = fewer, surer injections)"),
+    Setting("retrieval.encoder", "defrost-ret-b", ("defrost-ret-b", "qwen3-emb-0.6b"), "DEFROST_ENCODER",
+            "dense retriever for new builds. A memory remembers its encoder; changing it needs a full rebuild."),
     Setting("service.port", 8765, (), "",
             "local port of the background search service"),
 ]

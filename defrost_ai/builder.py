@@ -114,15 +114,19 @@ def build(workspace: str | Path, models=None, log=print, model_lock=None) -> dic
     db.execute("INSERT INTO sections_fts(sections_fts) VALUES ('rebuild')")
     db.commit()
 
-    log("[3/4] section vectors (Defrost-Ret-B, cached by text hash)")
+    from defrost_ai.models.encoder import encoder_name
+    encoder = encoder_name()
+    log(f"[3/4] section vectors ({encoder}, cached by text hash)")
     rows = db.execute("SELECT id, heading_path, text FROM sections ORDER BY rowid").fetchall()
     texts = [f"{h}\n{t}" for _, h, t in rows]
     keys = [_sha(t) for t in texts]
-    cache = _load_cache(cache_root / "embeddings.npz")
+    cache_file = cache_root / ("embeddings.npz" if encoder == ENCODER_ID else f"embeddings-{encoder}.npz")
+    cache = _load_cache(cache_file)
     missing = sorted({k for k in keys if k not in cache})
     if missing:
         from defrost_ai.memory import Models
         models = models or Models()
+        models.encoder = encoder
         by_key = {k: t for k, t in zip(keys, texts)}
         lock = model_lock or contextlib.nullcontext()
         for i in range(0, len(missing), EMBED_CHUNK):
@@ -133,10 +137,10 @@ def build(workspace: str | Path, models=None, log=print, model_lock=None) -> dic
     dim = next(iter(cache.values())).shape[0] if cache else 896
     section_vecs = np.stack([cache[k] for k in keys]).astype(np.float16) if keys else np.zeros((0, dim), np.float16)
     np.savez(stage / store.SECTION_VECTORS, ids=np.array([r[0] for r in rows]), vecs=section_vecs,
-             encoder=np.array(ENCODER_ID))
+             encoder=np.array(encoder))
     live = set(keys)
     kept = {k: v for k, v in cache.items() if k in live}
-    np.savez(cache_root / "embeddings.npz", keys=np.array(list(kept)), vecs=np.stack(list(kept.values())) if kept
+    np.savez(cache_file, keys=np.array(list(kept)), vecs=np.stack(list(kept.values())) if kept
              else np.zeros((0, dim), np.float16))
 
     log("[4/4] manifest + atomic swap")
@@ -145,7 +149,7 @@ def build(workspace: str | Path, models=None, log=print, model_lock=None) -> dic
                "edited": sorted(p for p in doc_hashes if p in old_hashes and old_hashes[p] != doc_hashes[p])}
     manifest = {
         "workspace": ws.name, "workspace_file": str(ws.source), "built_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-        "encoder": ENCODER_ID, "build_seconds": round(time.time() - t0, 1),
+        "encoder": encoder, "build_seconds": round(time.time() - t0, 1),
         "counts": {"docs": len(doc_hashes), "sections": len(rows), "code_nodes": len(code["nodes"]),
                    "code_edges": len(code["edges"]), "sections_encoded_now": len(missing),
                    "doc_code_links": int(db.execute("SELECT COUNT(*) FROM links WHERE confidence='EXTRACTED'").fetchone()[0])},
