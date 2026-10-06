@@ -235,26 +235,6 @@ class Memory:
                 break
             if len(out) >= max_lines:
                 break
-        # Names that resolve to no code symbol (env variables, config keys, string constants, SQL names) are the
-        # ones fact questions ask about; find their first use in code by exact word match.
-        roots = list(dict.fromkeys(r for r, _ in self._repo_paths(self.name + "/x")))
-        for (mention,) in self.db.execute("SELECT mention FROM unresolved WHERE section_id=? ORDER BY rowid", (sid,)):
-            name = (mention or "").strip("`").removesuffix("()")
-            if len(out) >= max_lines or len(name) < 4 or "/" in name or " " in name:
-                continue
-            for root in roots:
-                try:
-                    r = subprocess.run(["git", "-C", str(root), "grep", "-n", "-I", "-F", "-w", "-m", "1", "-e", name,
-                                        "--", ".", ":!*.md", ":!*.lock", ":!*.json"],
-                                       capture_output=True, text=True, timeout=5)
-                except (OSError, subprocess.TimeoutExpired):
-                    continue
-                for line in r.stdout.splitlines()[:1]:
-                    f, ln, text = line.split(":", 2)
-                    if (f, int(ln)) not in seen:
-                        seen.add((f, int(ln)))
-                        out.append(f"{f}:{ln}: {text.strip()[:160]}")
-                break
         return out
 
     def _repo_paths(self, rel: str):
