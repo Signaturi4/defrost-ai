@@ -26,7 +26,8 @@ GUIDE = ("Report every disagreement you see as a conflict, with both versions an
          "sections, between a section and the code, and a section's own note that the code differs or that "
          "something is not built yet. Say which version the code follows. Answer a plain yes or no only when the "
          "evidence supports all of it; otherwise say what holds and what does not. Call something verified only "
-         "for code you read in this session.")
+         "for code you read in this session. When you need code, read every file you need in one step (parallel "
+         "tool calls), not one file per turn.")
 
 
 def _worth_searching(prompt: str) -> bool:
