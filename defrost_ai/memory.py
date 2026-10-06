@@ -37,14 +37,13 @@ class Models:
 
     def __init__(self, weights: Path | None = None, device: str | None = None):
         self.weights, self.device = weights, device
-        self.encoder = None                                  # set by Memory to the encoder its vectors came from
         self._retriever = self._reranker = None
 
     @property
     def retriever(self):
         if self._retriever is None:
-            from defrost_ai.models.encoder import encoder_name, make_retriever
-            self._retriever = make_retriever(self.encoder or encoder_name(), self.weights, self.device)
+            from defrost_ai.models.encoder import DefrostRetriever
+            self._retriever = DefrostRetriever(self.weights, self.device)
         return self._retriever
 
     @property
@@ -63,11 +62,6 @@ class Memory:
         self.name = name or self.manifest.get("workspace", self.out.name)
         self.db = store.open_readonly(self.out / store.KNOWLEDGE_DB)
         v = np.load(self.out / store.SECTION_VECTORS)
-        built_with = str(v["encoder"]) if "encoder" in v.files else "defrost-ret-b"
-        if self.models.encoder not in (None, built_with):
-            raise RuntimeError(f"memory {self.out} was built with encoder {built_with!r}, but the loaded models use "
-                               f"{self.models.encoder!r}: rebuild it or switch retrieval.encoder")
-        self.models.encoder = built_with                    # queries must use the encoder the sections used
         self.section_ids = list(v["ids"])
         self.section_vecs = v["vecs"].astype(np.float32)
         self.section_index = {s: i for i, s in enumerate(self.section_ids)}

@@ -51,8 +51,6 @@ SETTINGS = [
             "sections the prompt hook adds (both sides of a doc conflict need room)"),
     Setting("prompt_context.budget_tokens", 3500, (), "DEFROST_PROMPT_BUDGET",
             "most tokens the prompt hook adds (~300 words per section plus its code links)"),
-    Setting("retrieval.encoder", "defrost-ret-b", ("defrost-ret-b", "qwen3-emb-0.6b"), "DEFROST_ENCODER",
-            "dense retriever for new builds. A memory remembers its encoder; changing it needs a full rebuild."),
     Setting("service.port", 8765, (), "",
             "local port of the background search service"),
 ]

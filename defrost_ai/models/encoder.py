@@ -44,38 +44,3 @@ class DefrostRetriever:
             v = (h * pool[..., None]).sum(1) / pool.sum(1, keepdim=True).clamp(min=1)
             vecs[idx] = torch.nn.functional.normalize(v.float(), dim=-1).cpu().numpy()
         return vecs
-
-
-# Hugging Face embedding models usable as the dense retriever (sentence-transformers; prefixes from each model card).
-ST_ENCODERS = {
-    "qwen3-emb-0.6b": ("Qwen/Qwen3-Embedding-0.6B", f"Instruct: {RETRIEVAL_INSTRUCTION}\nQuery:", ""),
-}
-
-
-class STRetriever:
-    """A sentence-transformers embedding model behind the DefrostRetriever interface (L2-normalised, 512 tokens)."""
-
-    def __init__(self, name: str, device: str | None = None, max_tokens: int = 512):
-        from sentence_transformers import SentenceTransformer
-        hf, self.query_prefix, self.doc_prefix = ST_ENCODERS[name]
-        self.model = SentenceTransformer(hf, device=pick_device(device))
-        self.model.max_seq_length = max_tokens
-
-    def embed_documents(self, texts: list[str], batch_size: int = 16) -> np.ndarray:
-        if not texts:
-            return np.zeros((0, self.model.get_sentence_embedding_dimension()), dtype=np.float32)
-        return self.model.encode([self.doc_prefix + t for t in texts], batch_size=batch_size, normalize_embeddings=True,
-                                 convert_to_numpy=True, show_progress_bar=False).astype(np.float32)
-
-    def embed_query(self, query: str) -> np.ndarray:
-        return self.model.encode([self.query_prefix + query], normalize_embeddings=True, convert_to_numpy=True,
-                                 show_progress_bar=False)[0].astype(np.float32)
-
-
-def encoder_name() -> str:
-    from defrost_ai import settings
-    return str(settings.get("retrieval.encoder"))
-
-
-def make_retriever(name: str, weights: Path | None = None, device: str | None = None):
-    return DefrostRetriever(weights, device) if name == ENCODER_ID else STRetriever(name, device)
