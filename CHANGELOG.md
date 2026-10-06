@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **The prompt hook finds both sides of a conflict:** it now searches reranked (`prompt_context.mode accurate`,
+  falling back to fast when the reranker is cold), adds the top 5 sections (`prompt_context.k`) within 3,500 tokens
+  (`prompt_context.budget_tokens`), and tells Claude to report every disagreement with both versions and to avoid a
+  plain yes or no the evidence only partly supports. Low doc trust now states both versions before asking. On a
+  real repository (20 questions × 2 runs, blind judge): fully correct 100% (fast top 3: 94% on the 8 hardest), conflict
+  traps flagged 100% (was 67%), hallucination 0%; cost per run about +10%. Details: `docs/AGENT_QA.md`.
+- **Agent QA benchmark** (`bench/agent_qa`): Claude Code headless per arm, a blind judge that scores against key
+  points, hook-output capture, and a paired report.
+- **Fix: a settings section split in two made `config.toml` unreadable** (duplicate TOML table, every setting fell
+  back to its default); settings of a section now stay together, with a test.
 - **`defrost forget NAME` deletes a memory:** its built index and previous build, workspace file, trigger
   state, logs, schedule and registry entry, plus the hooks it installed in its repository unless another memory
   indexes the same repository (worktrees share git hooks). Only files inside the defrost home are deleted; project

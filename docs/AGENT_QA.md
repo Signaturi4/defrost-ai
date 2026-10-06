@@ -66,8 +66,57 @@ Facts:
 - **Stale docs did not mislead this model.** Both arms checked the code on every stale trap.
 - **Extra context costs money.** The memory text and 141 skill descriptions make each run about 22% dearer.
 
-Root causes per failed answer and the improvement loop follow in the next study.
+Root causes per failed answer and the improvement loop follow in study v1.
 
 Facts:
 - Installed rule pages → compete with → project docs in search
 - A documented code gap → suppressed → conflict flags
+
+## Study v1: research loop on the prompt hook (2026-10-06)
+
+Same project and questions as v0. Two fixes to the measurement came first: the judge now scores against key points
+per question (it had marked identical answers differently), and two ground truths were wrong (the code had moved
+past the docs the truths were taken from). Re-judged, v0 reads 77% fully correct without defrost and 95% with it.
+
+Each failed v0 answer got one root cause. Most were not retrieval misses: 6 were wrong ground truths, 4 came from a
+doc that framed a code gap as settled, 3 from stopping before reading the code, 2 from overclaiming, and 1 from the
+judge. The hook's fast top 3 held an essential section for 15 of 20 questions, and both sides of a conflict for 0 of 3.
+
+Every change was tested alone, cheapest test first: gold-span recall (free), the hook's injected text (free), then
+targeted agent runs. A change was kept only if its metric rose and correctness did not fall.
+
+| Change | Measured | Result | Kept |
+|---|---|---|---|
+| Hook: reranked search, top 5, 3,500-token pack | essential section injected; both conflict sides injected | 15/20 → 16/20; 0/3 → 3/3 | yes |
+| Hook: report every disagreement with both versions; no partial yes/no | 8 hardest questions × 2: fully correct, conflicts flagged | 94% → 100%; 67% → 100% | yes |
+| Hook: "verified only for code you read" sentence | 20 questions × 2 | no gain; removing it raised 1-turn answers 12% → 20% | removed |
+| Hook: file:line code lines for the identifiers a section names | 20 questions × 2 | fully correct 100% → 98%, flagged 100% → 83% | no |
+| Hook: "read all needed files in one step" | 20 questions × 2 | turns unchanged, fully correct 100% → 98% | no |
+| Index `.plans`-like hidden folders; skip the rules page | 6 affected questions × 2 | fully correct 100% → 92% | no |
+| Dense retriever Qwen3-Embedding-0.6B instead of Ret-B | gold-span recall and MRR, fast and reranked | 15/20 and .706 against 15/20 and .688; same reranked | no |
+
+Final configuration on all 20 questions × 2 runs (`claude-sonnet-5`, judge `claude-opus-5-5`):
+
+| Metric | Clean docs, no defrost | Defrost v0 hook | Defrost v1 hook |
+|---|---|---|---|
+| Fully correct | 80% | 95% (v0 study, 60 runs) | 100% |
+| Conflict traps flagged | 17% | 44% (v0 study) | 100% |
+| Hallucination | 0% | 0% | 0% |
+| Answered in 1 turn | 22% | 37% | 20% |
+| Latency, median | 9 s | 9 s | 15 s |
+| Cost per run, mean | $0.051 | $0.061 | $0.102 |
+
+The v1 hook buys correctness and conflict reporting with time and money: the agent now checks the code it is told
+disagrees. A held-out set (22 questions over this project and defrost itself, written by a separate agent and never
+seen by the loop) is the next validation; until it runs, these numbers are from the questions the loop was tuned on.
+
+Facts:
+- The reranked top-5 hook → put → both sides of every conflict trap in context (3/3, was 0/3)
+- The v1 hook → reached → 100% fully correct and 100% conflicts flagged on the dev questions
+- Code lines in the hook, folder indexing and Qwen3-Embedding-0.6B → were rejected → no measured gain
+
+## Sources
+
+- Study v0 and v1 runs, 2026-10-05 and 2026-10-06: `bench/agent_qa/aqa.py` on a private ETL and CRM repository;
+  raw logs, scores and the per-run root-cause analysis are kept with that project.
+- Loop results log (`results.tsv`, one row per experiment, kept or not), 2026-10-06, same location.

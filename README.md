@@ -133,10 +133,13 @@ The three questions:
 
 3. **Search the memory automatically for each question?** (`--prompt-context`, on in `standard` and `full`;
    `--no-prompt-context` turns it off). A Claude Code `UserPromptSubmit` hook (`defrost hook prompt`) searches the
-   memory (fast mode, top 3) and adds the sections to the prompt, so a lookup is answered in one model turn instead
-   of three to five (measured on a docs repository: ~4 s with Sonnet instead of 18–30 s). It skips slash commands,
-   prompts under 3 words and prompts whose best section is less similar than `prompt_context.min_cosine` (0.34), and
-   it never waits for a cold service.
+   memory (reranked, top 5, at most 3,500 tokens) and adds the sections to the prompt, so a lookup is answered in
+   one model turn instead of three to five (measured on a docs repository: ~4 s with Sonnet instead of 18–30 s). It
+   also tells Claude to report every disagreement it sees, between two sections or between a section and the code,
+   with both versions, and not to answer a plain yes or no that the evidence only partly supports. It skips slash
+   commands, prompts under 3 words and prompts whose best section is less similar than `prompt_context.min_cosine`
+   (0.34). It never waits for a cold service, and falls back to fast search when the reranker is still loading.
+   `prompt_context.mode`, `prompt_context.k` and `prompt_context.budget_tokens` change it.
 
 The search mode is not asked: it defaults to `accurate` (see [Search modes](#search-modes)); `--mode` or
 `defrost config search.mode fast` changes it.
