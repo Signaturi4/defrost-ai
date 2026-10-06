@@ -25,8 +25,7 @@ RERANK_TIMEOUT = 5.0                                     # seconds for a reranke
 GUIDE = ("Report every disagreement you see as a conflict, with both versions and their path:line: between two "
          "sections, between a section and the code, and a section's own note that the code differs or that "
          "something is not built yet. Say which version the code follows. Answer a plain yes or no only when the "
-         "evidence supports all of it; otherwise say what holds and what does not. Call something verified only "
-         "for code you read in this session.")
+         "evidence supports all of it; otherwise say what holds and what does not.")
 
 
 def _worth_searching(prompt: str) -> bool:
