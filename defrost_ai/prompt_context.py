@@ -59,7 +59,7 @@ def context_for(payload: dict) -> str | None:
         return None
     budget = int(settings.get("prompt_context.budget_tokens"))
     query = {"query": prompt.strip()[:MAX_QUERY], "domains": domains, "k": int(settings.get("prompt_context.k")),
-             "context": True, "budget_tokens": budget}
+             "context": True, "budget_tokens": budget, "code_lines": int(settings.get("prompt_context.code_lines"))}
     res = None
     if settings.get("prompt_context.mode") == "accurate":   # reranked: puts both sides of a conflict in the top k
         try:

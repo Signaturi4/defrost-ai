@@ -208,6 +208,35 @@ class Memory:
         cache[key] = text
         return text
 
+    def code_evidence(self, sid: str, max_lines: int = 6) -> list[str]:
+        """Code lines that back a section: for each identifier the section names (an EXTRACTED link), the lines of
+        the linked file that contain it, as 'file:line: text'. Lets an agent check a doc against the code without
+        opening files. File-name mentions are skipped (their lines say nothing about behaviour)."""
+        out, seen = [], set()
+        rows = self.db.execute("SELECT node_id, mention FROM links WHERE section_id=? AND confidence='EXTRACTED' "
+                               "ORDER BY score DESC, rowid", (sid,)).fetchall()
+        for nid, mention in rows:
+            node = self.code_nodes.get(nid)
+            name = (mention or "").strip("`").removesuffix("()")
+            if not node or not node.get("source_file") or len(name) < 3 or "/" in name or \
+                    name == Path(node["source_file"]).name:
+                continue
+            for root, sub in self._repo_paths(node["source_file"]):
+                try:
+                    lines = (root / sub).read_text(errors="replace").splitlines()
+                except OSError:
+                    continue
+                for i, line in enumerate(lines, 1):
+                    key = (sub, i)
+                    if name in line and key not in seen:
+                        seen.add(key)
+                        out.append(f"{sub}:{i}: {line.strip()[:160]}")
+                        break                                # first use per (name, file): the definition or the key line
+                break
+            if len(out) >= max_lines:
+                break
+        return out
+
     def _repo_paths(self, rel: str):
         """(repo root, path inside it) candidates for a display path '<component>/<path>'."""
         comp, _, sub = rel.partition("/")
@@ -325,6 +354,7 @@ class Memory:
                          + (f": {r['note']}" if r["note"] else ""))
             if h.get("verify"):
                 code += "\n  verify in: " + ", ".join(h["verify"])
+            code += "".join(f"\n  code: {line}" for line in h.get("evidence", []))
             block = f"[{h['rank']}] {h['domain']}:{h['path']}:L{h['lines'][0]}-{h['lines'][1]}  {h['heading']}\n{body}{code}\n"
             if used + len(block) // 4 > budget_tokens:
                 break
