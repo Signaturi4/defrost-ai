@@ -45,9 +45,18 @@ def _git_files(root: Path) -> list[str] | None:
     return sorted(f for f in r.stdout.decode("utf-8", "surrogateescape").split("\0") if f)
 
 
+# Hidden folders are tool state (.git, .venv, .claude, .idea, ...) and are skipped, except CI config and folders whose
+# name says they hold the project's own writing: plan queues and notes are where "what is the current task" lives.
+VISIBLE_HIDDEN = {".github", ".plans", ".plan", ".notes", ".docs", ".adr", ".decisions"}
+
+
+def hidden(d: str) -> bool:
+    return d.startswith(".") and d not in VISIBLE_HIDDEN
+
+
 def _walk(root: Path):
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and (not d.startswith(".") or d == ".github"))
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not hidden(d))
         for name in sorted(filenames):
             yield Path(dirpath) / name
 
@@ -80,7 +89,7 @@ class Component:
             for path in candidates:
                 rel = path.relative_to(root)
                 parts = rel.parts[:-1]
-                if any(d in SKIP_DIRS or (d.startswith(".") and d != ".github") or d in self.exclude for d in parts) \
+                if any(d in SKIP_DIRS or hidden(d) or d in self.exclude for d in parts) \
                         or any("/".join(parts[:i + 1]) in self.exclude for i in range(len(parts))) \
                         or rel.as_posix() in self.exclude or rel.name in self.exclude:
                     continue
