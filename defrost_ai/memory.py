@@ -11,6 +11,7 @@ Every hit is a section of a document, quoted verbatim with path and line range, 
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import time
@@ -52,6 +53,33 @@ class Models:
             from defrost_ai.models.reranker import DefrostReranker
             self._reranker = DefrostReranker(self.weights, self.device)
         return self._reranker
+
+
+_WORD = re.compile(r"[a-z0-9_]{3,}")
+_COMMON = set("the and for are was were not but with this that what when where which who how does did can will "
+              "from into they them their there then than have has had its you your all any our out use used only "
+              "also more most some such each per via one two set get".split())
+
+
+def excerpt(text: str, query: str, words: int) -> str:
+    """At most `words` words of a section. A longer section keeps its first sentence, then the sentences that share
+    the most words with the query, in their original order ("…" marks a gap): a claim deep in a long section still
+    reaches the agent."""
+    if len(text.split()) <= words:
+        return " ".join(text.split())
+    sents = [x for x in re.split(r"(?<=[.!?:])\s+|\n+", text) if x.strip()]
+    terms = set(_WORD.findall(query.lower())) - _COMMON
+    score = lambda i: len(terms & set(_WORD.findall(sents[i].lower())))
+    keep, n = {0}, len(sents[0].split())
+    for i in sorted(range(1, len(sents)), key=lambda i: (-score(i), i)):
+        if n + len(sents[i].split()) <= words:
+            keep.add(i); n += len(sents[i].split())
+    out, prev = [], -1
+    for i in sorted(keep):
+        if i != prev + 1:
+            out.append("…")
+        out.append(" ".join(sents[i].split())); prev = i
+    return " ".join(out)
 
 
 class Memory:
@@ -306,7 +334,7 @@ class Memory:
             used += len(parts[-1]) // 4
         ledgers: dict[str, list] = {}
         for h in result["hits"]:
-            body = " ".join(h["text"].split()[:words_per_hit])
+            body = excerpt(h["text"], result.get("query", ""), words_per_hit)
             code = "".join(f"\n  -> code {c['label']} ({c['file']}{':' + c['location'] if c['location'] else ''})"
                            for c in h["code"])
             code += "".join(f"\n  ! doc may be stale: {x['file']} changed {x['changed']}, after this doc ({x['doc']}), "

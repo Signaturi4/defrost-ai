@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections import defaultdict
 
 RRF_K = 60
-POOL = 20
+POOL = 30                    # 20 -> 30: P2 dev recall@5 8/10 -> 9/10, MRR up on both suites; +0.5 s
 DEPTH = 50
 MODES = ("bm25", "dense", "hybrid", "rerank", "all", "accurate")      # internal policies
 USER_MODES = {"accurate": "accurate", "fast": "hybrid"}                 # what users choose between
