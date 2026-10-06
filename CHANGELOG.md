@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Fix: the search service grew without bound on Apple Silicon** and could exhaust memory and swap (a 24 GB Mac
+  panicked with three services at 17-22 GB each). MLX kept every freed GPU buffer for reuse, and reranking makes new
+  batch shapes on each query: about 0.5 GB more per reranked search. The MLX buffer cache is now capped at 512 MB
+  (`DEFROST_MLX_CACHE_MB`); latency is unchanged (0.35-0.4 s per reranked query at 0, 512 MB and 2 GB).
 - **The prompt hook finds both sides of a conflict:** it now searches reranked (`prompt_context.mode accurate`,
   falling back to fast when the reranker is cold), adds the top 5 sections (`prompt_context.k`) within 3,500 tokens
   (`prompt_context.budget_tokens`), and tells Claude to report every disagreement with both versions and to avoid a
