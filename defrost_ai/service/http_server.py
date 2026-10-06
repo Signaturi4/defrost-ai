@@ -59,10 +59,6 @@ class Service:
         with self.gpu:
             res = self.library.search(body["query"], body.get("domains"), body.get("mode"), _k(body.get("k", 5)),
                                       body.get("merge"))
-        n = int(body.get("code_lines") or 0)
-        if n:                                                       # code lines behind the top sections
-            for h in res["hits"][:3]:
-                h["evidence"] = self.library.memory(h["domain"]).code_evidence(h["section_id"], n)
         if body.get("context"):
             res["context"] = Memory.context(res, int(body.get("budget_tokens", 2000)))
         return res
