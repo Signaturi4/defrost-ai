@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **`defrost forget NAME` deletes a memory:** its built index and previous build, workspace file, trigger
+  state, logs, schedule and registry entry, plus the hooks it installed in its repository unless another memory
+  indexes the same repository (worktrees share git hooks). Only files inside the defrost home are deleted; project
+  files and the notes repository stay. `--dry-run` lists what would go. Before, a stray memory could only be
+  removed by hand.
 - **The skill lives in its own repository:** `skills/knowledge_lifecycle_skill/` is a git submodule of
   [knowledge_lifecycle_skill](https://github.com/Signaturi4/knowledge_lifecycle_skill), so defrost carries exactly
   the published skill, tests and evals; the copies under `skills/extraction-ready-docs/` and `skills/tests/` are gone.

@@ -1,4 +1,4 @@
-"""The 1.2 surface: two search modes, a settings file, 9 public commands, one hook entry point, 4 MCP tools."""
+"""The 1.2 surface: two search modes, a settings file, 10 public commands, one hook entry point, 4 MCP tools."""
 import json
 
 import pytest

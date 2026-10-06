@@ -156,6 +156,7 @@ defrost setup --claude-hook                          # also refresh when a Claud
 defrost setup --no-doc-rules                         # keep CLAUDE.md free of the doc-writing rules
 defrost setup --help                                 # every option
 defrost setup --remove                               # remove every hook and schedule defrost installed
+defrost forget NAME                                  # delete a memory you no longer need
 ```
 
 Upgrade: run the install line again (the resident service restarts itself on the new build).
@@ -196,6 +197,7 @@ Researchers can still ask for one retriever with `--mode bm25|dense|hybrid|reran
 | `defrost docs [FILES]` | which doc sections to update for your change (`--staged`, `--commit SHA`, `--pending`) |
 | `defrost note "goal"` | save a handoff note (`--state`, `--next`, `--why`); `--brief` shows the latest, `--history` all |
 | `defrost config [KEY [VALUE]]` | show or change personal settings |
+| `defrost forget NAME` | delete a memory: its index, schedule, hooks and registry entry (`--dry-run` shows the list first; project files and notes stay) |
 | `defrost mcp`, `defrost serve` | the MCP server and the local HTTP service (started for you) |
 
 ### Settings
