@@ -68,8 +68,10 @@ def excerpt(text: str, query: str, words: int) -> str:
     if len(text.split()) <= words:
         return " ".join(text.split())
     sents = [x for x in re.split(r"(?<=[.!?:])\s+|\n+", text) if x.strip()]
-    terms = set(_WORD.findall(query.lower())) - _COMMON
-    score = lambda i: len(terms & set(_WORD.findall(sents[i].lower())))
+    stem = lambda w: re.sub(r"(ing|ed|es|s)$", "", w) if len(w) > 4 else w      # files = file, indexed = index
+    bag = lambda x: {stem(w) for w in _WORD.findall(x.lower())}
+    terms = bag(query) - {stem(w) for w in _COMMON}
+    score = lambda i: len(terms & bag(sents[i]))
     keep, n = {0}, len(sents[0].split())
     for i in sorted(range(1, len(sents)), key=lambda i: (-score(i), i)):
         if n + len(sents[i].split()) <= words:
