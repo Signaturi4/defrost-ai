@@ -10,6 +10,7 @@ Day to day:
   defrost docs [FILES]          which doc sections to update for your change
   defrost note "goal"           save a handoff note for the next session; --brief shows the latest
   defrost config [KEY [VALUE]]  personal settings, e.g. `defrost config search.mode fast`
+  defrost forget NAME           delete a memory: its index, schedule, hooks and registry entry
 
 Search modes:
   accurate (default)  best results; reranks when the two retrievers disagree (~1-2 s on Apple Silicon)
@@ -25,7 +26,7 @@ import time
 from pathlib import Path
 import sys
 
-PUBLIC = ["setup", "search", "status", "refresh", "docs", "note", "config", "mcp", "serve"]
+PUBLIC = ["setup", "search", "status", "refresh", "docs", "note", "config", "forget", "mcp", "serve"]
 PROFILES = {
     "minimal":  dict(on_main_merge=True),
     "standard": dict(on_main_merge=True, doc_rules=True, handoff=True, docs_sync=True, docs_gate=False,
@@ -134,6 +135,10 @@ def main(argv=None):
     cg = sub.add_parser("config", help="personal settings (search mode, doc trust, models, port)")
     cg.add_argument("key", nargs="?"); cg.add_argument("value", nargs="?")
     cg.add_argument("--reset", action="store_true", help="back to the default")
+
+    fg = sub.add_parser("forget", help="delete a memory (index, schedule, hooks, registry entry)")
+    fg.add_argument("name", help="memory name, as `defrost status` shows it")
+    fg.add_argument("--dry-run", action="store_true", help="only show what would be deleted")
 
     sub.add_parser("mcp", help="MCP server (stdio): claude mcp add defrost -- defrost mcp")
     v = sub.add_parser("serve", help="local HTTP service (started automatically)")
@@ -625,6 +630,29 @@ def cmd_note(a):
         return 1
 
 
+def cmd_forget(a):
+    from defrost_ai.project_setup import forget
+    try:
+        plan = forget(a.name, dry_run=True)
+    except KeyError as e:
+        print(e.args[0], file=sys.stderr)
+        return 1
+    print(f"Memory {a.name!r}{' (dry run: nothing is deleted)' if a.dry_run else ''}:")
+    print("  unregister: " + ", ".join(plan["unregister"]))
+    for p in plan["delete"]:
+        print(f"  delete:     {p}")
+    for r in plan["remove_hooks_in"]:
+        print(f"  remove defrost hooks in: {r}")
+    for r in plan["hooks_kept_shared_with_other_memories"]:
+        print(f"  keep hooks in {r} (another memory indexes the same repository)")
+    print("  Your project files and notes repository are not touched.")
+    if a.dry_run:
+        return 0
+    forget(a.name)
+    print(f"Forgot {a.name!r}.")
+    return 0
+
+
 def cmd_config(a):
     from defrost_ai import settings
     if not a.key:
@@ -683,7 +711,7 @@ def cmd_hook(a):
 
 
 NEW = {"setup": cmd_setup, "search": cmd_search, "status": cmd_status, "refresh": cmd_refresh, "docs": cmd_docs,
-       "note": cmd_note, "config": cmd_config, "mcp": cmd_mcp, "serve": cmd_serve, "hook": cmd_hook}
+       "note": cmd_note, "config": cmd_config, "forget": cmd_forget, "mcp": cmd_mcp, "serve": cmd_serve, "hook": cmd_hook}
 
 
 def _weights_ok() -> bool:
