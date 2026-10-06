@@ -3,7 +3,7 @@ type: reference
 entity: agent QA results
 owner: maintainers
 status: current
-updated: 2026-10-05
+updated: 2026-10-06
 lifecycle: living
 source: true
 ---
@@ -107,13 +107,40 @@ Final configuration on all 20 questions × 2 runs (`claude-sonnet-5`, judge `cla
 | Cost per run, mean | $0.051 | $0.061 | $0.102 |
 
 The v1 hook buys correctness and conflict reporting with time and money: the agent now checks the code it is told
-disagrees. A held-out set (22 questions over this project and defrost itself, written by a separate agent and never
-seen by the loop) is the next validation; until it runs, these numbers are from the questions the loop was tuned on.
+disagrees. The numbers above come from the questions the loop was tuned on.
 
 Facts:
 - The reranked top-5 hook → put → both sides of every conflict trap in context (3/3, was 0/3)
 - The v1 hook → reached → 100% fully correct and 100% conflicts flagged on the dev questions
 - Code lines in the hook, folder indexing and Qwen3-Embedding-0.6B → were rejected → no measured gain
+
+### Held-out validation
+
+A separate agent wrote 22 questions the loop never saw: 12 on the same project (P1) and 10 on defrost itself (P2).
+Both arms ran the same memory; only the defrost build differed (v0 hook against the v1 hook). 3 runs per question.
+
+| Metric | P1 v0 hook | P1 v1 hook | P2 v0 hook | P2 v1 hook |
+|---|---|---|---|---|
+| Fully correct | 44% | 61% | 47% | 40% |
+| Wrong (0) | 8% | 0% | 0% | 0% |
+| Conflict traps flagged | 67% | 83% | 11% | 0% |
+| Stale fact stated as current | 0% | 0% | 17% | 0% |
+| Hallucination | 3% | 0% | 0% | 0% |
+| Answered in 1 turn | 6% | 0% | 27% | 13% |
+| Cost per run, mean | $0.083 | $0.118 | $0.083 | $0.104 |
+| Paired: better / worse / same (sign test p) | | 10 / 3 / 23 (0.092) | | 1 / 3 / 26 (0.63) |
+
+The v1 hook carries over to new questions on the project it was tuned on, but not to a second project: on defrost
+itself neither arm flagged the conflict traps, and correctness did not move. Held-out results do not feed back into
+the loop. The next iteration needs a new dev project with conflict traps and a fresh held-out set.
+
+In the first held-out attempt the search service grew to 17-22 GB and the Mac ran out of swap. The cause was
+the MLX buffer cache, fixed in this release. Runs logged while the service was swapping were set aside, and
+all runs were redone.
+
+Facts:
+- The v1 hook → raised → held-out fully correct answers on the tuned project (44% → 61%)
+- The v1 hook → did not raise → conflict flags or correctness on a second project
 
 ## Sources
 
