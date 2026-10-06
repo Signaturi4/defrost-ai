@@ -27,8 +27,6 @@ GUIDE = ("Report every disagreement you see as a conflict, with both versions an
          "something is not built yet. Say which version the code follows. Answer a plain yes or no only when the "
          "evidence supports all of it; otherwise say what holds and what does not. Call something verified only "
          "for code you read in this session.")
-CODE_GUIDE = ("The `code:` lines under a section are the current code (file:line); when they settle the question, "
-              "answer from them without opening the files, and cite them.")
 
 
 def _worth_searching(prompt: str) -> bool:
@@ -76,8 +74,7 @@ def context_for(payload: dict) -> str | None:
         return None
     return (f"Project memory ({name}) was searched automatically for this prompt (best match {best:.2f}). If these "
             "sections answer it, answer from them and cite path:Lstart-end without searching again; call the defrost "
-            f"`search` tool only for what they do not cover. {GUIDE}"
-            + (f" {CODE_GUIDE}" if "\n  code: " in res["context"] else "") + "\n\n" + res["context"][:budget * 4 + 2000])
+            f"`search` tool only for what they do not cover. {GUIDE}\n\n" + res["context"][:budget * 4 + 2000])
 
 
 def hook(payload: dict) -> dict | None:
