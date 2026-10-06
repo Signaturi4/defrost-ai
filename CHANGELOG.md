@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Fix: the search service could run code from the directory it was started in.** It started with
+  `python -m defrost_ai.cli serve` in the caller's working directory, and `python -m` imports from there first: a
+  service started inside a checkout with its own `defrost_ai/` folder ran that code, and later starts kept using it
+  as "another installation". The service now starts from its installation's root.
 - **Fix: the search service grew without bound on Apple Silicon** and could exhaust memory and swap (a 24 GB Mac
   panicked with three services at 17-22 GB each). MLX kept every freed GPU buffer for reuse, and reranking makes new
   batch shapes on each query: about 0.5 GB more per reranked search. The MLX buffer cache is now capped at 512 MB

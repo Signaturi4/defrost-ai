@@ -104,7 +104,11 @@ def ensure_service(wait: float = 120) -> None:
     home = os.path.expanduser(os.environ.get("DEFROST_HOME", "~/.defrost-ai"))
     log = open(os.path.join(home, "service.log"), "a") if os.path.isdir(home) else subprocess.DEVNULL
     cmd = shlex.split(SERVE_CMD) if SERVE_CMD else [sys.executable, "-m", "defrost_ai.cli", "serve"]
-    subprocess.Popen(cmd + ["--port", port], stdout=log, stderr=log, start_new_session=True)
+    # Run from this installation's root: `python -m` imports from the working directory first, so a service started
+    # inside a checkout with its own `defrost_ai/` folder would run that code (and stay: see "other install" above).
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    subprocess.Popen(cmd + ["--port", port], stdout=log, stderr=log, start_new_session=True,
+                     cwd=os.path.dirname(root))
     t0 = time.time()
     while time.time() - t0 < wait:
         if alive() and _token():
