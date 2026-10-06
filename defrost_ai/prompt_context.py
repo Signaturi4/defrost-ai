@@ -25,11 +25,10 @@ RERANK_TIMEOUT = 5.0                                     # seconds for a reranke
 GUIDE = ("Report every disagreement you see as a conflict, with both versions and their path:line: between two "
          "sections, between a section and the code, and a section's own note that the code differs or that "
          "something is not built yet. Say which version the code follows. Answer a plain yes or no only when the "
-         "evidence supports all of it; otherwise say what holds and what does not.")
-if os.environ.get("DEFROST_PROMPT_CHECK"):                          # experiment P4
-    GUIDE += (" After reading the code, check every sentence above that bears on the question against it, and quote "
-              "each one the code contradicts; code comments and docstrings that contradict the code count too. A "
-              "section that states a simpler rule than the code applies disagrees with it.")
+         "evidence supports all of it; otherwise say what holds and what does not. After reading the code, check "
+         "every sentence above that bears on the question against it, and quote each one the code contradicts; code "
+         "comments and docstrings that contradict the code count too. A section that states a simpler rule than the "
+         "code applies disagrees with it.")
 
 
 def _worth_searching(prompt: str) -> bool:
