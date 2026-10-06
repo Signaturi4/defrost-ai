@@ -20,7 +20,6 @@ HOOK_TAG = "defrost-ai:prompt-context"
 EVENT = "UserPromptSubmit"
 MIN_WORDS = 3
 MAX_QUERY = 500                                          # characters of the prompt used as the search query
-MAX_CHARS = 8000                                         # characters of context added to the prompt
 TIMEOUT = 4.0                                            # seconds for a fast search (it takes ~0.05 s warm)
 RERANK_TIMEOUT = 5.0                                     # seconds for a reranked search (~1-2 s warm); then fast
 GUIDE = ("Report every disagreement you see as a conflict, with both versions and their path:line: between two "
@@ -58,8 +57,9 @@ def context_for(payload: dict) -> str | None:
     domains = [d for d in (name, context_domain(name)) if built.get(d, {}).get("built")]
     if not domains:
         return None
+    budget = int(settings.get("prompt_context.budget_tokens"))
     query = {"query": prompt.strip()[:MAX_QUERY], "domains": domains, "k": int(settings.get("prompt_context.k")),
-             "context": True}
+             "context": True, "budget_tokens": budget}
     res = None
     if settings.get("prompt_context.mode") == "accurate":   # reranked: puts both sides of a conflict in the top k
         try:
@@ -74,7 +74,7 @@ def context_for(payload: dict) -> str | None:
         return None
     return (f"Project memory ({name}) was searched automatically for this prompt (best match {best:.2f}). If these "
             "sections answer it, answer from them and cite path:Lstart-end without searching again; call the defrost "
-            f"`search` tool only for what they do not cover. {GUIDE}\n\n" + res["context"][:MAX_CHARS])
+            f"`search` tool only for what they do not cover. {GUIDE}\n\n" + res["context"][:budget * 4 + 2000])
 
 
 def hook(payload: dict) -> dict | None:

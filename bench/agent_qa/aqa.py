@@ -76,7 +76,7 @@ def setup(cfg, _):
     for (arm, spec), letter in zip(cfg["arms"].items(), letters):
         ref = subprocess.run(["git", "-C", cfg["repo"], "rev-parse", "--short", spec["ref"]], capture_output=True,
                              text=True, check=True).stdout.strip()
-        path = base / letter
+        path = Path(spec["path"]) if spec.get("path") else base / letter   # arms may share a worktree
         if not path.exists():
             subprocess.run(["git", "-C", cfg["repo"], "worktree", "add", "--detach", str(path), ref], check=True)
         for pattern in cfg["strip"]:                    # the answer key and anything that reveals it: never in an arm
