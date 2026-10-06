@@ -4,6 +4,7 @@ import os
 import stat
 import threading
 import time
+from pathlib import Path
 import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
@@ -157,3 +158,19 @@ def test_service_of_a_replaced_install_is_restarted_but_a_live_other_install_is_
     monkeypatch.setattr(client, "_health", lambda: {"ok": True, "build": "old", "install": str(other)})
     client.ensure_service(wait=0)
     assert calls == []
+
+
+def test_service_starts_outside_the_callers_directory(home, tmp_path, monkeypatch):
+    """`python -m` imports from the working directory first: started from a checkout that has its own `defrost_ai/`
+    (or any repo with such a folder), the service would run that code instead of this installation."""
+    import defrost_ai
+    from defrost_ai.service import client
+    seen = {}
+    monkeypatch.setattr(client, "_health", lambda: None)
+    monkeypatch.setattr(client, "alive", lambda: False)
+    monkeypatch.setattr(client.subprocess, "Popen", lambda cmd, **k: seen.update(k))
+    monkeypatch.delenv("DEFROST_SERVE_CMD", raising=False)
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(RuntimeError):
+        client.ensure_service(wait=0)
+    assert Path(seen["cwd"]) == Path(defrost_ai.__file__).resolve().parent.parent
