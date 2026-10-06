@@ -220,12 +220,3 @@ def test_settings_of_a_section_are_contiguous():
         if not order or order[-1] != sec:
             assert sec not in order, f"settings of [{sec}] must be next to each other"
             order.append(sec)
-
-
-def test_docs_like_hidden_folders_are_indexed_tool_folders_are_not():
-    from defrost_ai.config import hidden
-    from defrost_ai.project_setup import _indexed
-    assert not hidden(".plans") and not hidden(".github") and not hidden("docs")
-    assert hidden(".claude") and hidden(".venv") and hidden(".git")
-    assert _indexed(".plans/queue.md", []) and not _indexed(".claude/skills/x/SKILL.md", [])
-    assert not _indexed("docs/KNOWLEDGE_RULES.md", ["docs/DOC_RULES.md", "docs/KNOWLEDGE_RULES.md"])

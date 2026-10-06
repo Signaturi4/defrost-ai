@@ -49,8 +49,7 @@ def workspace_for(path: Path, name: str) -> Path:
     if not ws.exists():
         ws.write_text(json.dumps({"name": name, "out": str(HOME / name), "components": [{
             "name": name, "path": str(path),
-            "exclude": ["docs/DOC_RULES.md", "docs/KNOWLEDGE_RULES.md", "docs/templates", "docs/tools"]}]},
-                                  indent=1))                                                # the doc-rules kit itself
+            "exclude": ["docs/DOC_RULES.md", "docs/templates", "docs/tools"]}]}, indent=1))   # the doc-rules kit itself
     return ws
 
 
@@ -93,11 +92,11 @@ def changed_since_build(name: str) -> tuple[bool, str]:
 
 
 def _indexed(rel: str, exclude) -> bool:
-    """Same skip rules as Component.files: no SKIP_DIRS, no hidden dirs (except CI and docs-like ones), no excludes."""
-    from defrost_ai.config import SKIP_DIRS, hidden
+    """Same skip rules as Component.files: no SKIP_DIRS, no hidden dirs (except .github), no excludes."""
+    from defrost_ai.config import SKIP_DIRS
     parts = rel.split("/")
     dirs = parts[:-1]
-    if any(d in SKIP_DIRS or hidden(d) for d in dirs):
+    if any(d in SKIP_DIRS or (d.startswith(".") and d != ".github") for d in dirs):
         return False
     return not any(rel == e or rel.startswith(e.rstrip("/") + "/") for e in exclude)
 
