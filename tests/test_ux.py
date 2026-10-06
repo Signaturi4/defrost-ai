@@ -208,3 +208,15 @@ def test_claude_hooks_are_portable_for_teammates(tmp_path, monkeypatch):
     (fake / "defrost").write_text("#!/bin/sh\nexit 2\n")
     (fake / "defrost").chmod(0o755)
     assert subprocess.run(["sh", "-c", stop], env={"PATH": f"{fake}{os.pathsep}/usr/bin:/bin"}).returncode == 2
+
+
+def test_settings_of_a_section_are_contiguous():
+    """config.toml is written in SETTINGS order; a section split in two is a duplicate TOML table, which makes the
+    whole file unreadable (every setting silently falls back to its default)."""
+    from defrost_ai import settings
+    order = []
+    for s in settings.SETTINGS:
+        sec = s.key.split(".")[0]
+        if not order or order[-1] != sec:
+            assert sec not in order, f"settings of [{sec}] must be next to each other"
+            order.append(sec)

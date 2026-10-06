@@ -21,8 +21,13 @@ EVENT = "UserPromptSubmit"
 MIN_WORDS = 3
 MAX_QUERY = 500                                          # characters of the prompt used as the search query
 MAX_CHARS = 8000                                         # characters of context added to the prompt
-K = 3
-TIMEOUT = 4.0                                            # seconds for the search call (it takes ~0.05 s warm)
+TIMEOUT = 4.0                                            # seconds for a fast search (it takes ~0.05 s warm)
+RERANK_TIMEOUT = 5.0                                     # seconds for a reranked search (~1-2 s warm); then fast
+GUIDE = ("Report every disagreement you see as a conflict, with both versions and their path:line: between two "
+         "sections, between a section and the code, and a section's own note that the code differs or that "
+         "something is not built yet. Say which version the code follows. Answer a plain yes or no only when the "
+         "evidence supports all of it; otherwise say what holds and what does not. Call something verified only "
+         "for code you read in this session.")
 
 
 def _worth_searching(prompt: str) -> bool:
@@ -53,15 +58,23 @@ def context_for(payload: dict) -> str | None:
     domains = [d for d in (name, context_domain(name)) if built.get(d, {}).get("built")]
     if not domains:
         return None
-    res = client._call("POST", "/search", {"query": prompt.strip()[:MAX_QUERY], "domains": domains, "mode": "fast",
-                                           "k": K, "context": True}, timeout=TIMEOUT)
+    query = {"query": prompt.strip()[:MAX_QUERY], "domains": domains, "k": int(settings.get("prompt_context.k")),
+             "context": True}
+    res = None
+    if settings.get("prompt_context.mode") == "accurate":   # reranked: puts both sides of a conflict in the top k
+        try:
+            res = client._call("POST", "/search", query | {"mode": "accurate"}, timeout=RERANK_TIMEOUT)
+        except Exception:                                    # a cold reranker must not cost the prompt its context
+            res = None
+    if res is None:
+        res = client._call("POST", "/search", query | {"mode": "fast"}, timeout=TIMEOUT)
     hits = res.get("hits") or []
     best = max((h.get("cosine") or 0 for h in hits), default=0)
     if best < settings.get("prompt_context.min_cosine") or not res.get("context"):
         return None
     return (f"Project memory ({name}) was searched automatically for this prompt (best match {best:.2f}). If these "
             "sections answer it, answer from them and cite path:Lstart-end without searching again; call the defrost "
-            "`search` tool only for what they do not cover.\n\n" + res["context"][:MAX_CHARS])
+            f"`search` tool only for what they do not cover. {GUIDE}\n\n" + res["context"][:MAX_CHARS])
 
 
 def hook(payload: dict) -> dict | None:

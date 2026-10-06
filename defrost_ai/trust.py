@@ -19,7 +19,7 @@ HEADER = {
     "high": "doc trust: HIGH (well-documented project). Answer from these sections; read code only for hits with a "
             "`!` line; if the code disagrees, ask the user which is right (see conflicts.QUESTION).",
     "low": "doc trust: LOW (code changes fast, docs lag). Treat these sections as hints: read the `verify in:` files "
-           "and answer from the code; cite a doc only where the code agrees. Doc/code disagreements you verified in the code: ask the user (at most 2 questions).",
+           "and answer from the code; cite a doc only where the code agrees. Doc/code disagreements you verified in the code: state both versions in the answer, then ask the user which is right (at most 2 questions).",
 }
 
 RULE = {
