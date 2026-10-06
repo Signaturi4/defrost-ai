@@ -122,6 +122,7 @@ class Memory:
                          "code": code, "verify": verify, "stale": stale, "missing": missing, "doc_trust": level})
         from defrost_ai.models import weights
         return {"query": query, "mode": asked, "mode_used": used, "k": k, "hits": hits,
+                "best_cosine": max(cos.values(), default=0.0),     # before reranking: is the query about these docs?
                 "timing_ms": {"first_stage": round(1000 * (t1 - t0)), "rerank": round(1000 * (t2 - t1))},
                 "weights_warning": weights.WARNING}
 

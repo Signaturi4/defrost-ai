@@ -26,6 +26,10 @@ GUIDE = ("Report every disagreement you see as a conflict, with both versions an
          "sections, between a section and the code, and a section's own note that the code differs or that "
          "something is not built yet. Say which version the code follows. Answer a plain yes or no only when the "
          "evidence supports all of it; otherwise say what holds and what does not.")
+if os.environ.get("DEFROST_PROMPT_CHECK"):                          # experiment P4
+    GUIDE += (" After reading the code, check every sentence above that bears on the question against it, and quote "
+              "each one the code contradicts; code comments and docstrings that contradict the code count too. A "
+              "section that states a simpler rule than the code applies disagrees with it.")
 
 
 def _worth_searching(prompt: str) -> bool:
@@ -68,7 +72,7 @@ def context_for(payload: dict) -> str | None:
     if res is None:
         res = client._call("POST", "/search", query | {"mode": "fast"}, timeout=TIMEOUT)
     hits = res.get("hits") or []
-    best = max((h.get("cosine") or 0 for h in hits), default=0)
+    best = res.get("best_cosine") or max((h.get("cosine") or 0 for h in hits), default=0)
     if best < settings.get("prompt_context.min_cosine") or not res.get("context"):
         return None
     return (f"Project memory ({name}) was searched automatically for this prompt (best match {best:.2f}). If these "
