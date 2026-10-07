@@ -13,6 +13,7 @@
   code location checked. The instruction is repeated after the sections, where it is followed more often (8/10 vs 5/10).
   On the hardest questions of a second repository, fully correct answers rose from 0% to 50%; the first stayed at 100%.
   Answers take more tool calls (1-turn answers 20% -> 5%) and cost about 40% more.
+  On held-out questions from a third repository it made no difference (fully correct 44% -> 47%, conflicts 0%).
 - **Fix: the search service could run code from the directory it was started in.** It started with
   `python -m defrost_ai.cli serve` in the caller's working directory, and `python -m` imports from there first: a
   service started inside a checkout with its own `defrost_ai/` folder ran that code, and later starts kept using it

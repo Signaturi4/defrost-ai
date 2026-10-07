@@ -174,8 +174,31 @@ All questions, 2 runs each (`claude-sonnet-5`, judge `claude-opus-5-5`):
 | Cost per run, mean | $0.102 | $0.147 | $0.104 | $0.138 |
 
 Two bugs surfaced on the way and are fixed: the MLX buffer cache grew without bound (a 24 GB Mac ran out of swap),
-and a service started inside a checkout with its own `defrost_ai/` ran that checkout's code. The held-out run on the
-third repository is in progress.
+and a service started inside a checkout with its own `defrost_ai/` ran that checkout's code.
+
+### Held-out validation on a third repository
+
+A separate agent wrote 12 questions on a third repository (3 conflict traps, 3 stale traps, 2 navigation,
+2 decision, 2 fact) and checked every truth in the code. Both arms ran on a clean checkout with the same memory;
+only the defrost build differed. 3 runs per question.
+
+| Metric | v0 hook | v3 |
+|---|---|---|
+| Fully correct | 44% | 47% |
+| Wrong (0) | 8% | 8% |
+| Conflict traps flagged | 0% | 0% |
+| Hallucination | 3% | 6% |
+| Answered in 1 turn | 0% | 0% |
+| Cost per run, mean | $0.083 | $0.116 |
+| Paired: better / worse / same (sign test p) | | 2 / 1 / 33 (1.0) |
+
+v3 does not carry over: per question the two arms scored the same on 10 of 12, and neither flagged a conflict trap.
+The hook injected on all 12 questions in both arms, so the memory reached the agent. The dev gains came from
+questions the loop was tuned on; a configuration that generalises across projects is not reached yet. Held-out
+answers are not analysed here, so they stay unseen by the loop.
+
+Facts:
+- v3 → did not raise → fully correct answers or conflict flags on a third repository's held-out questions
 
 Facts:
 - Best-window reranking and a pool of 30 → raised → gold recall@5 on project 2 from 6/10 to 9/10
