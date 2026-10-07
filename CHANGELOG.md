@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Retrieval finds claims deep in long sections.** A third of doc sections are longer than the reranker's
+  384-token window, so a claim near the end of one was invisible to it. Long sections are now scored by their best
+  of two overlapping windows (128 tokens overlap), the rerank pool is 30 per retriever (was 20), and the context pack
+  shows the head of a long section plus the sentences that share the most words with the question. The hook's
+  relevance gate uses the best similarity before reranking. Gold recall@5: 16/20 -> 17/20 on one project, 6/10 ->
+  9/10 on another; reranked search takes about 0.9 s more.
+- **The prompt hook asks Claude to compare the docs with the code.** Answers start with what the code does today and
+  end with a "Docs vs code" list: each injected sentence that bears on the question, agrees or contradicts, with the
+  code location checked. The instruction is repeated after the sections, where it is followed more often (8/10 vs 5/10).
+  On the hardest questions of a second repository, fully correct answers rose from 0% to 50%; the first stayed at 100%.
+  Answers take more tool calls (1-turn answers 20% -> 5%) and cost about 40% more.
 - **Fix: the search service could run code from the directory it was started in.** It started with
   `python -m defrost_ai.cli serve` in the caller's working directory, and `python -m` imports from there first: a
   service started inside a checkout with its own `defrost_ai/` folder ran that code, and later starts kept using it

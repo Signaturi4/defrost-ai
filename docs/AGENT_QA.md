@@ -3,7 +3,7 @@ type: reference
 entity: agent QA results
 owner: maintainers
 status: current
-updated: 2026-10-06
+updated: 2026-10-07
 lifecycle: living
 source: true
 ---
@@ -141,6 +141,46 @@ all runs were redone.
 Facts:
 - The v1 hook → raised → held-out fully correct answers on the tuned project (44% → 61%)
 - The v1 hook → did not raise → conflict flags or correctness on a second project
+
+## Study v2: second project, retrieval and compare-with-code (2026-10-07)
+
+The v1 held-out set showed no gain on defrost's own repository, so its 10 questions became the second dev set
+(project 2) and a separate agent wrote a new held-out set on a third repository. Root causes of the project 2
+misses: the conflicting doc line was not used although it was in the context (4 questions), the reranker could not
+see a claim past a section's first 384 tokens (1), the pack cut a long section before the claim (1), the conflicting
+text was a code docstring (1), and a section ranked too low (1).
+
+| Change | Measured | Result | Kept |
+|---|---|---|---|
+| Rerank long sections by their best of 2 windows | gold recall@5, P1 / P2 | 16/20 -> 17/20; 6/10 -> 8/10 | yes |
+| Hook gate on the best cosine before reranking | questions injected | the window change no longer drops injections | yes |
+| Pack: head plus the sentences that match the question | conflict claims in the pack, P2 | 2/5 -> 3/5 | yes |
+| Window overlap 64 -> 128 tokens | MRR P1 / P2 | .713 -> .762; .670 -> .700 | yes |
+| Rerank pool 20 -> 30 per retriever | recall@5 P2, MRR | 8/10 -> 9/10; .762 -> .787 and .700 -> .720 | yes |
+| 3 windows; 512-token window; 450-word excerpts; pool 40 | same | no gain, or P2 worse | no |
+| 40-word overlap with neighbouring sections in the index | MRR P2 | .700 -> .648 | no |
+| Hook: compare every injected sentence with the code read, docstrings too | P2 traps 5 x 2: flagged, fully correct | 20% -> 50%; 10% -> 20% | yes |
+| Hook: open with what the code does today, end with a "Docs vs code" list | P2 traps fully correct; P1 conflict traps | 0% -> 30%; 83% -> 100% | yes |
+| Hook: repeat the list instruction after the sections | P2 traps fully correct; list written | 30% -> 50%; 5/10 -> 8/10 | yes |
+
+All questions, 2 runs each (`claude-sonnet-5`, judge `claude-opus-5-5`):
+
+| Metric | P1 v1 hook | P1 v3 | P2 v1 hook | P2 v3 |
+|---|---|---|---|---|
+| Fully correct | 100% | 100% | 40% | 55% |
+| Conflict traps flagged | 6/6 | 6/6 | 0/9 | 3/6 |
+| Hallucination | 0% | 0% | 0% | 0% |
+| Answered in 1 turn | 20% | 5% | 13% | 10% |
+| Cost per run, mean | $0.102 | $0.147 | $0.104 | $0.138 |
+
+Two bugs surfaced on the way and are fixed: the MLX buffer cache grew without bound (a 24 GB Mac ran out of swap),
+and a service started inside a checkout with its own `defrost_ai/` ran that checkout's code. The held-out run on the
+third repository is in progress.
+
+Facts:
+- Best-window reranking and a pool of 30 → raised → gold recall@5 on project 2 from 6/10 to 9/10
+- The "Docs vs code" list → raised → fully correct answers on project 2's traps from 0% to 50%
+- The compare-with-code hook → costs → about 40% more per run and fewer 1-turn answers
 
 ## Sources
 
