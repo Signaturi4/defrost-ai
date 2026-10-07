@@ -210,3 +210,11 @@ def test_hook_gate_uses_the_best_cosine_before_reranking(monkeypatch):
                         fake(m, p, b, timeout) | ({"best_cosine": 0.5} if p == "/search" else {}))
     out = prompt_context.hook({"prompt": "will a secret file be indexed", "cwd": "."})
     assert "agency:a.md:L1-5" in out["hookSpecificOutput"]["additionalContext"]
+
+
+def test_the_docs_vs_code_check_is_asked_for_before_and_after_the_sections(monkeypatch):
+    """Asked only before a long pack, agents wrote the check in 5 of 10 answers; repeated after it, in 8 of 10."""
+    _fake_service(monkeypatch, 0.42)
+    ctx = prompt_context.hook({"prompt": "who is artem", "cwd": "."})["hookSpecificOutput"]["additionalContext"]
+    assert ctx.index("'Docs vs code' list") < ctx.index("agency:a.md:L1-5")
+    assert ctx.rstrip().endswith(prompt_context.END)

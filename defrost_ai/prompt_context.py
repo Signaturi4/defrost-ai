@@ -29,6 +29,11 @@ GUIDE = ("Report every disagreement you see as a conflict, with both versions an
          "every sentence above that bears on the question against it, and quote each one the code contradicts; code "
          "comments and docstrings that contradict the code count too. A section that states a simpler rule than the "
          "code applies disagrees with it.")
+END = ("Before you answer: read the code these sections describe, then end with the 'Docs vs code' list, one line "
+       "per sentence above that bears on the question: path:line, agrees or contradicts, and the code path:line.")
+GUIDE += (" Start the answer with what the code does today. End it with a 'Docs vs code' list: one line per "
+          "sentence above that bears on the question, with its path:line, 'agrees' or 'contradicts', and the code "
+          "path:line you checked. Which version is right is the user's call; what runs today is not.")
 
 
 def _worth_searching(prompt: str) -> bool:
@@ -76,7 +81,8 @@ def context_for(payload: dict) -> str | None:
         return None
     return (f"Project memory ({name}) was searched automatically for this prompt (best match {best:.2f}). If these "
             "sections answer it, answer from them and cite path:Lstart-end without searching again; call the defrost "
-            f"`search` tool only for what they do not cover. {GUIDE}\n\n" + res["context"][:budget * 4 + 2000])
+            f"`search` tool only for what they do not cover. {GUIDE}\n\n" + res["context"][:budget * 4 + 2000]
+            + f"\n\n{END}")                     # repeated after the sections: followed 8/10, not 5/10
 
 
 def hook(payload: dict) -> dict | None:
