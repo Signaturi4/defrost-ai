@@ -117,6 +117,24 @@ class DefrostReranker:
 
     @torch.no_grad()
     def _score(self, query: str, texts: list[str], batch_size: int | None = None) -> np.ndarray:
+        # A section longer than max_doc tokens is scored as its best window (2 windows of max_doc, 128 overlapping):
+        # a claim past the first 384 tokens was invisible to the reranker. A third of sections are that long.
+        windows = int(os.environ.get("DEFROST_RERANK_WINDOWS", 2))
+        if windows > 1:
+            parts, owner = [], []
+            for j, t in enumerate(texts):
+                ids = self.tok(t, add_special_tokens=False)["input_ids"]
+                step = self.max_doc - 128
+                for w in range(0, max(1, len(ids) - (self.max_doc - step)), step)[:windows]:
+                    parts.append(self.tok.decode(ids[w:w + self.max_doc])); owner.append(j)
+            flat = self._score_once(query, parts, batch_size)
+            out = np.full(len(texts), -np.inf, dtype=np.float32)
+            np.maximum.at(out, owner, flat.astype(np.float32))
+            return out
+        return self._score_once(query, texts, batch_size)
+
+    @torch.no_grad()
+    def _score_once(self, query: str, texts: list[str], batch_size: int | None = None) -> np.ndarray:
         """Pairs are sorted by length and cut into batches of at most `token_budget` padded tokens, so short sections
         are not padded to the longest one; scores come back in input order. One host sync per query."""
         seqs = self._encode_pairs(query, texts)

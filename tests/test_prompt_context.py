@@ -34,15 +34,45 @@ def _fake_service(monkeypatch, cosine, *, alive=True, context="doc trust: HIGH\n
     return calls
 
 
-def test_relevant_question_gets_the_sections_in_one_fast_search(monkeypatch):
+def test_relevant_question_gets_the_sections_in_one_reranked_search(monkeypatch):
     calls = _fake_service(monkeypatch, 0.42)
+    monkeypatch.delenv("DEFROST_PROMPT_MODE", raising=False)
+    monkeypatch.delenv("DEFROST_PROMPT_K", raising=False)
     out = prompt_context.hook({"prompt": "who is artem", "cwd": "."})
     ctx = out["hookSpecificOutput"]
     assert ctx["hookEventName"] == "UserPromptSubmit"
     assert "agency:a.md:L1-5" in ctx["additionalContext"] and "without searching again" in ctx["additionalContext"]
-    search = [c for c in calls if c[1] == "/search"][0]
-    assert search[2]["mode"] == "fast" and search[2]["k"] == 3 and search[2]["domains"] == ["agency"]   # built only
-    assert search[3] <= 5                                                    # bounded: never hangs the prompt
+    assert "as a conflict" in ctx["additionalContext"]                       # conflicts are reported, both sides
+    searches = [c for c in calls if c[1] == "/search"]
+    assert len(searches) == 1                                                # one search when the reranker answers
+    assert searches[0][2]["mode"] == "accurate" and searches[0][2]["k"] == 5
+    assert searches[0][2]["domains"] == ["agency"]                           # built domains only
+    assert searches[0][3] <= 5                                               # bounded: never hangs the prompt
+
+
+def test_cold_reranker_falls_back_to_a_fast_search(monkeypatch):
+    calls = _fake_service(monkeypatch, 0.42)
+    from defrost_ai.service import client
+    fake = client._call
+
+    def slow_rerank(method, path, body=None, timeout=600):
+        if path == "/search" and body["mode"] == "accurate":
+            calls.append((method, path, body, timeout))
+            raise TimeoutError("reranker still loading")
+        return fake(method, path, body, timeout)
+    monkeypatch.setattr(client, "_call", slow_rerank)
+    out = prompt_context.hook({"prompt": "who is artem", "cwd": "."})
+    assert "agency:a.md:L1-5" in out["hookSpecificOutput"]["additionalContext"]
+    assert [c[2]["mode"] for c in calls if c[1] == "/search"] == ["accurate", "fast"]
+
+
+def test_hook_mode_and_k_are_settings(monkeypatch):
+    calls = _fake_service(monkeypatch, 0.42)
+    monkeypatch.setenv("DEFROST_PROMPT_MODE", "fast")
+    monkeypatch.setenv("DEFROST_PROMPT_K", "3")
+    prompt_context.hook({"prompt": "who is artem", "cwd": "."})
+    search = [c for c in calls if c[1] == "/search"]
+    assert len(search) == 1 and search[0][2]["mode"] == "fast" and search[0][2]["k"] == 3
 
 
 def test_unrelated_prompt_adds_nothing(monkeypatch):
@@ -169,3 +199,22 @@ def test_setup_installs_and_a_rerun_without_it_removes_the_prompt_hook(tmp_path,
     assert "UserPromptSubmit" not in hooks
     from defrost_ai import trust
     assert trust.read(tmp_path / "home/r.workspace.json") == "high"              # re-run without doc_trust keeps it
+
+
+def test_hook_gate_uses_the_best_cosine_before_reranking(monkeypatch):
+    """The reranker may put a lower-cosine section first; the gate asks whether the prompt is about the docs at all."""
+    from defrost_ai.service import client
+    _fake_service(monkeypatch, 0.2)
+    fake = client._call
+    monkeypatch.setattr(client, "_call", lambda m, p, b=None, timeout=600:
+                        fake(m, p, b, timeout) | ({"best_cosine": 0.5} if p == "/search" else {}))
+    out = prompt_context.hook({"prompt": "will a secret file be indexed", "cwd": "."})
+    assert "agency:a.md:L1-5" in out["hookSpecificOutput"]["additionalContext"]
+
+
+def test_the_docs_vs_code_check_is_asked_for_before_and_after_the_sections(monkeypatch):
+    """Asked only before a long pack, agents wrote the check in 5 of 10 answers; repeated after it, in 8 of 10."""
+    _fake_service(monkeypatch, 0.42)
+    ctx = prompt_context.hook({"prompt": "who is artem", "cwd": "."})["hookSpecificOutput"]["additionalContext"]
+    assert ctx.index("'Docs vs code' list") < ctx.index("agency:a.md:L1-5")
+    assert ctx.rstrip().endswith(prompt_context.END)

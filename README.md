@@ -82,12 +82,34 @@ slash commands with Claude Code. It installs the release named in the script (a 
 `DEFROST_VERSION=x.y.z` for another release or `DEFROST_REF=main` for the development branch. `defrost --version`
 shows the installed code and weights versions.
 
-Then open Claude Code in any repository and type `/defrost-setup`, or run it in a terminal:
+### Set up the memory in a new repository
 
-```sh
-defrost setup          # asks 3 questions; press Enter for the recommended answer
-defrost setup --yes    # no questions, recommended answers
-```
+Once per machine: the install line above. Then, once per repository:
+
+1. **Make it a git repository** if it is not one yet (`git init`): the refreshes after commits and merges use git
+   hooks.
+2. **See the recommended doc trust** (optional; setup asks anyway):
+
+   ```sh
+   cd /path/to/repo
+   defrost setup . --suggest-trust     # prints the suggestion, the reason and any stored level; changes nothing
+   ```
+3. **Set it up**, in Claude Code or in a terminal:
+   - In Claude Code: `claude`, then type `/defrost-setup`. It asks the three questions below and builds the memory.
+   - In a terminal:
+
+     ```sh
+     defrost setup                                           # asks the 3 questions; Enter takes the recommended one
+     defrost setup --yes --profile standard --doc-trust low  # no questions (code-heavy repository)
+     defrost setup --yes --profile standard --doc-trust high # no questions (docs repository)
+     ```
+     `--yes` needs `--doc-trust` for a new repository. Add `--claude` to also write the MCP server and slash
+     commands into this project's own config.
+4. **Check it**: `defrost status` lists the repository with its sections and "up to date", and
+   `defrost search "how does <something> work?"` returns cited sections. In a Claude Code session that was already
+   open, run `/mcp` and reconnect `defrost` first.
+5. **Commit** what setup added (`CLAUDE.md`, `.claude/settings.json`, `docs/`) so teammates get it; see
+   **Teammates** below.
 
 The three questions:
 
@@ -111,10 +133,13 @@ The three questions:
 
 3. **Search the memory automatically for each question?** (`--prompt-context`, on in `standard` and `full`;
    `--no-prompt-context` turns it off). A Claude Code `UserPromptSubmit` hook (`defrost hook prompt`) searches the
-   memory (fast mode, top 3) and adds the sections to the prompt, so a lookup is answered in one model turn instead
-   of three to five (measured on a docs repository: ~4 s with Sonnet instead of 18–30 s). It skips slash commands,
-   prompts under 3 words and prompts whose best section is less similar than `prompt_context.min_cosine` (0.34), and
-   it never waits for a cold service.
+   memory (reranked, top 5, at most 3,500 tokens) and adds the sections to the prompt, so a lookup is answered in
+   one model turn instead of three to five (measured on a docs repository: ~4 s with Sonnet instead of 18–30 s). It
+   also tells Claude to report every disagreement it sees, between two sections or between a section and the code,
+   with both versions, and not to answer a plain yes or no that the evidence only partly supports. It skips slash
+   commands, prompts under 3 words and prompts whose best section is less similar than `prompt_context.min_cosine`
+   (0.34). It never waits for a cold service, and falls back to fast search when the reranker is still loading.
+   `prompt_context.mode`, `prompt_context.k` and `prompt_context.budget_tokens` change it.
 
 The search mode is not asked: it defaults to `accurate` (see [Search modes](#search-modes)); `--mode` or
 `defrost config search.mode fast` changes it.
@@ -134,14 +159,15 @@ defrost setup --claude-hook                          # also refresh when a Claud
 defrost setup --no-doc-rules                         # keep CLAUDE.md free of the doc-writing rules
 defrost setup --help                                 # every option
 defrost setup --remove                               # remove every hook and schedule defrost installed
+defrost forget NAME                                  # delete a memory you no longer need
 ```
 
 Upgrade: run the install line again (the resident service restarts itself on the new build).
 
 **Teammates.** Commit what setup adds (`CLAUDE.md`, `.claude/settings.json`, `docs/`). The Claude hooks call
 `defrost` from `PATH` and do nothing where defrost is not installed, so a fresh clone works in Claude Code right away.
-Each teammate then runs the install line once and `defrost setup --yes --domain <name>` in their clone: the index and
-the git hooks are per machine and never committed.
+Each teammate then runs the install line once and `defrost setup --yes --domain <name> --doc-trust <low|high>` in
+their clone, with the level the project uses: the index and the git hooks are per machine and never committed.
 
 ## Search modes
 
@@ -174,6 +200,7 @@ Researchers can still ask for one retriever with `--mode bm25|dense|hybrid|reran
 | `defrost docs [FILES]` | which doc sections to update for your change (`--staged`, `--commit SHA`, `--pending`) |
 | `defrost note "goal"` | save a handoff note (`--state`, `--next`, `--why`); `--brief` shows the latest, `--history` all |
 | `defrost config [KEY [VALUE]]` | show or change personal settings |
+| `defrost forget NAME` | delete a memory: its index, schedule, hooks and registry entry (`--dry-run` shows the list first; project files and notes stay) |
 | `defrost mcp`, `defrost serve` | the MCP server and the local HTTP service (started for you) |
 
 ### Settings
@@ -437,6 +464,15 @@ What is different from the parts it is built on:
 - a Facts extractor that turns `- Subject → relation → Object` lines into triples.
 
 The research behind the rules: [docs/WRITING_FOR_EXTRACTION.md](docs/WRITING_FOR_EXTRACTION.md).
+
+The same rules ship as a standalone agent skill that needs no defrost install:
+[knowledge_lifecycle_skill](https://github.com/Signaturi4/knowledge_lifecycle_skill), included here as the git
+submodule `skills/knowledge_lifecycle_skill/` (clone with `--recurse-submodules`, or run
+`git submodule update --init`). Copy its `extraction-ready-docs/` folder to `~/.claude/skills/` and Claude applies
+the rules whenever it writes docs. `python skills/knowledge_lifecycle_skill/extraction-ready-docs/scripts/install.py
+<project>` sets a project up in any repository. Add `--defrost` in a project indexed by defrost: the installer then
+also copies the linters and writes its block between the same markers as `defrost setup`. To move to the skill's
+latest version: `git submodule update --remote skills/knowledge_lifecycle_skill`, then commit.
 
 ## Weights
 

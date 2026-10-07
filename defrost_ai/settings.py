@@ -45,6 +45,12 @@ SETTINGS = [
     Setting("prompt_context.min_cosine", 0.34, (), "DEFROST_PROMPT_MIN_COSINE",
             "the prompt hook adds memory sections to a question only when the best one is at least this similar "
             "(0-1; higher = fewer, surer injections)"),
+    Setting("prompt_context.mode", "accurate", ("accurate", "fast"), "DEFROST_PROMPT_MODE",
+            "search mode of the prompt hook. accurate reranks (~1-2 s; falls back to fast when the reranker is cold)"),
+    Setting("prompt_context.k", 5, (), "DEFROST_PROMPT_K",
+            "sections the prompt hook adds (both sides of a doc conflict need room)"),
+    Setting("prompt_context.budget_tokens", 3500, (), "DEFROST_PROMPT_BUDGET",
+            "most tokens the prompt hook adds (~300 words per section plus its code links)"),
     Setting("service.port", 8765, (), "",
             "local port of the background search service"),
 ]

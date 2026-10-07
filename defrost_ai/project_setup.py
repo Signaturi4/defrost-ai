@@ -397,3 +397,68 @@ def status(domain=None) -> list[dict]:
         rows.append({"domain": name, "built_at": man.get("built_at"), "counts": man.get("counts"),
                      "stale": stale, "why": why, "triggers": sorted(st.get("triggers", {}))})
     return rows
+
+
+# ---- forget: delete a memory ----------------------------------------------------------------------------------------
+def forget(name: str, dry_run: bool = False) -> dict:
+    """Delete memory `name`: its built index, previous build, workspace file, trigger state and logs, its registry
+    entry, its schedule, and (when no other memory indexes the same repository) the git and Claude hooks it installed
+    there. Never deletes anything outside the defrost home, and never the project or its notes repository (the
+    working-memory files are the user's; only defrost's pointer to them goes)."""
+    from defrost_ai.context_repo import context_domain
+    from defrost_ai.library import home, read_registry, registry_path
+    base = home().resolve()
+    reg = read_registry()
+    if name not in reg["domains"]:
+        raise KeyError(f"no memory named {name!r}; `defrost status` lists them")
+    names = [n for n in (name, context_domain(name)) if n in reg["domains"]]
+
+    def inside_home(p: Path) -> bool:
+        try:
+            return p.resolve().is_relative_to(base)
+        except OSError:
+            return False
+
+    paths, repos = [], []
+    for n in names:
+        ws = Path(reg["domains"][n]["workspace"])
+        spec = json.loads(ws.read_text()) if ws.exists() else {}
+        out = Path(spec.get("out") or base / n)
+        for p in (out, out.with_name(out.name + ".previous"), ws, base / f"{n}.triggers.json",
+                  base / f"{n}.refresh.log", base / f"{n}.docs-pending", base / f"{n}.conflicts.jsonl",
+                  base / f"{n}.context.path"):
+            if p.exists() and inside_home(p) and p not in paths:
+                paths.append(p)
+        if n == name:
+            repos = [Path(c["path"]).expanduser() for c in spec.get("components", [])]
+
+    def git_dir(p: Path) -> str:                         # worktrees of one repository share its hooks
+        return git(p, "rev-parse", "--path-format=absolute", "--git-common-dir") if p.exists() else ""
+
+    others = set()
+    for n, d in reg["domains"].items():
+        if n in names:
+            continue
+        try:
+            spec = json.loads(Path(d["workspace"]).read_text())
+        except (OSError, ValueError):
+            continue
+        for c in spec.get("components", []):
+            p = Path(c["path"]).expanduser()
+            others.update({str(p.resolve()) if p.exists() else str(p), git_dir(p)} - {""})
+    hooks = [r for r in repos if r.exists() and str(r.resolve()) not in others and git_dir(r) not in others]
+    kept = [str(r) for r in repos if r.exists() and r not in hooks]
+    plan = {"memory": name, "unregister": names, "delete": [str(p) for p in paths],
+            "remove_hooks_in": [str(r) for r in hooks], "hooks_kept_shared_with_other_memories": kept}
+    if dry_run:
+        return plan
+    remove_schedule(name)
+    for r in hooks:
+        setup(str(r), name, remove=True, log=lambda m: None)
+    for p in paths:
+        shutil.rmtree(p) if p.is_dir() else p.unlink()
+    reg = read_registry()
+    for n in names:
+        reg["domains"].pop(n, None)
+    registry_path().write_text(json.dumps(reg, indent=2))
+    return plan

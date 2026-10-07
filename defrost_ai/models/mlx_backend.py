@@ -30,6 +30,17 @@ def available() -> bool:
         return False
 
 
+CACHE_MB = int(os.environ.get("DEFROST_MLX_CACHE_MB", 512))
+
+
+def limit_cache() -> None:
+    """MLX keeps freed GPU buffers for reuse, by default up to about the RAM size. Reranking makes new batch shapes on
+    every query, so a long-running service grew by ~0.5 GB per query until macOS ran out of swap. Capped at CACHE_MB
+    (DEFROST_MLX_CACHE_MB): latency is the same at 0, 512 MB and 2 GB."""
+    import mlx.core as mx
+    mx.set_cache_limit(CACHE_MB * 2**20)
+
+
 def _dtype(name: str):
     import mlx.core as mx
     return {"bf16": mx.bfloat16, "fp16": mx.float16, "fp32": mx.float32}[name]
@@ -39,6 +50,7 @@ class MLXBackbone:
     def __init__(self, merged: Path, dtype: str = "bf16"):
         import mlx.core as mx
         from mlx_lm.models.qwen2 import ModelArgs, Qwen2Model
+        limit_cache()
         args = ModelArgs.from_dict(json.loads((Path(merged) / "config.json").read_text()))
         self.model = Qwen2Model(args)
         self.dtype = _dtype(dtype)

@@ -20,9 +20,20 @@ HOOK_TAG = "defrost-ai:prompt-context"
 EVENT = "UserPromptSubmit"
 MIN_WORDS = 3
 MAX_QUERY = 500                                          # characters of the prompt used as the search query
-MAX_CHARS = 8000                                         # characters of context added to the prompt
-K = 3
-TIMEOUT = 4.0                                            # seconds for the search call (it takes ~0.05 s warm)
+TIMEOUT = 4.0                                            # seconds for a fast search (it takes ~0.05 s warm)
+RERANK_TIMEOUT = 5.0                                     # seconds for a reranked search (~1-2 s warm); then fast
+GUIDE = ("Report every disagreement you see as a conflict, with both versions and their path:line: between two "
+         "sections, between a section and the code, and a section's own note that the code differs or that "
+         "something is not built yet. Say which version the code follows. Answer a plain yes or no only when the "
+         "evidence supports all of it; otherwise say what holds and what does not. After reading the code, check "
+         "every sentence above that bears on the question against it, and quote each one the code contradicts; code "
+         "comments and docstrings that contradict the code count too. A section that states a simpler rule than the "
+         "code applies disagrees with it.")
+END = ("Before you answer: read the code these sections describe, then end with the 'Docs vs code' list, one line "
+       "per sentence above that bears on the question: path:line, agrees or contradicts, and the code path:line.")
+GUIDE += (" Start the answer with what the code does today. End it with a 'Docs vs code' list: one line per "
+          "sentence above that bears on the question, with its path:line, 'agrees' or 'contradicts', and the code "
+          "path:line you checked. Which version is right is the user's call; what runs today is not.")
 
 
 def _worth_searching(prompt: str) -> bool:
@@ -58,17 +69,27 @@ def context_for(payload: dict, info: dict | None = None) -> str | None:
     if not domains:
         info["reason"] = "memory not built"
         return None
-    res = client._call("POST", "/search", {"query": prompt.strip()[:MAX_QUERY], "domains": domains, "mode": "fast",
-                                           "k": K, "context": True}, timeout=TIMEOUT)
+    budget = int(settings.get("prompt_context.budget_tokens"))
+    query = {"query": prompt.strip()[:MAX_QUERY], "domains": domains, "k": int(settings.get("prompt_context.k")),
+             "context": True, "budget_tokens": budget}
+    res = None
+    if settings.get("prompt_context.mode") == "accurate":   # reranked: puts both sides of a conflict in the top k
+        try:
+            res = client._call("POST", "/search", query | {"mode": "accurate"}, timeout=RERANK_TIMEOUT)
+        except Exception:                                    # a cold reranker must not cost the prompt its context
+            res = None
+    if res is None:
+        res = client._call("POST", "/search", query | {"mode": "fast"}, timeout=TIMEOUT)
     hits = res.get("hits") or []
-    best = max((h.get("cosine") or 0 for h in hits), default=0)
+    best = res.get("best_cosine") or max((h.get("cosine") or 0 for h in hits), default=0)
     info.update(best=round(best, 3), hits=len(hits), domain=name)
     if best < settings.get("prompt_context.min_cosine") or not res.get("context"):
         info["reason"] = "below relevance threshold"
         return None
     return (f"Project memory ({name}) was searched automatically for this prompt (best match {best:.2f}). If these "
             "sections answer it, answer from them and cite path:Lstart-end without searching again; call the defrost "
-            "`search` tool only for what they do not cover.\n\n" + res["context"][:MAX_CHARS])
+            f"`search` tool only for what they do not cover. {GUIDE}\n\n" + res["context"][:budget * 4 + 2000]
+            + f"\n\n{END}")                     # repeated after the sections: followed 8/10, not 5/10
 
 
 def hook(payload: dict) -> dict | None:

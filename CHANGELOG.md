@@ -9,6 +9,58 @@
   in the project's `.env`. Off costs nothing (the switch is checked in the shell); the hook always exits 0 and is
   silent. Deleting `defrost_ai/monitor.py` leaves everything else working. `defrost monitor report [--sequence]` and
   `defrost monitor status` read the logs. See docs/MONITORING.md.
+- **Retrieval finds claims deep in long sections.** A third of doc sections are longer than the reranker's
+  384-token window, so a claim near the end of one was invisible to it. Long sections are now scored by their best
+  of two overlapping windows (128 tokens overlap), the rerank pool is 30 per retriever (was 20), and the context pack
+  shows the head of a long section plus the sentences that share the most words with the question. The hook's
+  relevance gate uses the best similarity before reranking. Gold recall@5: 16/20 -> 17/20 on one project, 6/10 ->
+  9/10 on another; reranked search takes about 0.9 s more.
+- **The prompt hook asks Claude to compare the docs with the code.** Answers start with what the code does today and
+  end with a "Docs vs code" list: each injected sentence that bears on the question, agrees or contradicts, with the
+  code location checked. The instruction is repeated after the sections, where it is followed more often (8/10 vs 5/10).
+  On the hardest questions of a second repository, fully correct answers rose from 0% to 50%; the first stayed at 100%.
+  Answers take more tool calls (1-turn answers 20% -> 5%) and cost about 40% more.
+  On held-out questions from a third repository it made no difference (fully correct 44% -> 47%, conflicts 0%).
+- **Fix: the search service could run code from the directory it was started in.** It started with
+  `python -m defrost_ai.cli serve` in the caller's working directory, and `python -m` imports from there first: a
+  service started inside a checkout with its own `defrost_ai/` folder ran that code, and later starts kept using it
+  as "another installation". The service now starts from its installation's root.
+- **Fix: the search service grew without bound on Apple Silicon** and could exhaust memory and swap (a 24 GB Mac
+  panicked with three services at 17-22 GB each). MLX kept every freed GPU buffer for reuse, and reranking makes new
+  batch shapes on each query: about 0.5 GB more per reranked search. The MLX buffer cache is now capped at 512 MB
+  (`DEFROST_MLX_CACHE_MB`); latency is unchanged (0.35-0.4 s per reranked query at 0, 512 MB and 2 GB).
+- **The prompt hook finds both sides of a conflict:** it now searches reranked (`prompt_context.mode accurate`,
+  falling back to fast when the reranker is cold), adds the top 5 sections (`prompt_context.k`) within 3,500 tokens
+  (`prompt_context.budget_tokens`), and tells Claude to report every disagreement with both versions and to avoid a
+  plain yes or no the evidence only partly supports. Low doc trust now states both versions before asking. On a
+  real repository (20 questions × 2 runs, blind judge): fully correct 100% (fast top 3: 94% on the 8 hardest), conflict
+  traps flagged 100% (was 67%), hallucination 0%; cost per run about +10%. Details: `docs/AGENT_QA.md`.
+- **Agent QA benchmark** (`bench/agent_qa`): Claude Code headless per arm, a blind judge that scores against key
+  points, hook-output capture, and a paired report.
+- **Fix: a settings section split in two made `config.toml` unreadable** (duplicate TOML table, every setting fell
+  back to its default); settings of a section now stay together, with a test.
+- **`defrost forget NAME` deletes a memory:** its built index and previous build, workspace file, trigger
+  state, logs, schedule and registry entry, plus the hooks it installed in its repository unless another memory
+  indexes the same repository (worktrees share git hooks). Only files inside the defrost home are deleted; project
+  files and the notes repository stay. `--dry-run` lists what would go. Before, a stray memory could only be
+  removed by hand.
+- **The skill lives in its own repository:** `skills/knowledge_lifecycle_skill/` is a git submodule of
+  [knowledge_lifecycle_skill](https://github.com/Signaturi4/knowledge_lifecycle_skill), so defrost carries exactly
+  the published skill, tests and evals; the copies under `skills/extraction-ready-docs/` and `skills/tests/` are gone.
+- **Doc rules as a standalone skill:** `extraction-ready-docs/` packages the doc-writing rules, templates,
+  linter and Facts extractor as an agent skill that works without defrost. Its `scripts/install.py` is Python-only
+  (macOS, Linux, Windows), can also write `AGENTS.md`, and removes the block with `--remove`. Its linter accepts
+  directories and skips `templates/` and `DOC_RULES.md`.
+- **Knowledge-management rules in the skill:** `references/KNOWLEDGE_RULES.md` adds one home per file (docs map and
+  folder indexes), what-who-when file names with full `YYYY-MM-DD` dates (optional `docs/CODES.md` prefixes for 100+
+  files), a lifecycle per file (`living`, `versioned` with `archive/`, `immutable`; default: the agent decides per
+  page), `source: true` files with a Sources section, text twins for binaries, a decision register, folder splits
+  and safe moves. New `scripts/repo_lint.py` checks names, duplicate copies and entities, lifecycle, indexes, twins
+  and references. `install.py` is one command for any repository (it creates the `docs/README.md` map and
+  updates `AGENTS.md` when present), plus `--defrost` (linters, lint rule and defrost markers) and an optional
+  `--lifecycle`. After installing it scans every `.md` file (`scripts/audit.py`) and splits the work into in-place
+  fixes, applied right away, and renames/moves/merges, proposed for a yes. Tests and behaviour evals live in the
+  skill repository's `tests/`, outside the package.
 
 ## 1.2.1 (2026-10-02)
 

@@ -227,3 +227,13 @@ def test_user_modes_map_to_policies():
     assert policy.normalize("rerank") == "rerank"                   # expert modes still work
     with pytest.raises(ValueError):
         policy.normalize("turbo")
+
+
+def test_long_section_excerpt_keeps_the_sentences_the_question_asks_about():
+    """The pack shows 300 words per section; a claim past them was invisible to the agent."""
+    from defrost_ai.memory import excerpt
+    text = "Setup creates the memory. " + "The installer also writes a port file. " * 60 + "Secret-like files are never indexed."
+    out = excerpt(text, "Will a file named secret end up in the index?", 60)
+    assert out.startswith("Setup creates the memory.") and "Secret-like files are never indexed." in out
+    assert len(out.split()) <= 61 and "…" in out
+    assert excerpt("short text", "anything", 60) == "short text"

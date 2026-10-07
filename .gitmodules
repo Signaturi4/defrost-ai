@@ -1,0 +1,3 @@
+[submodule "skills/knowledge_lifecycle_skill"]
+	path = skills/knowledge_lifecycle_skill
+	url = https://github.com/Signaturi4/knowledge_lifecycle_skill
