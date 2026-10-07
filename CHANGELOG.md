@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Monitoring mode (optional):** `defrost setup . --monitor` adds Claude Code hooks that log each session to
+  `<DEFROST_HOME>/monitor/<project>/<session>.jsonl`. They record grep calls, memory searches and updates (by
+  command), the prompt hook's decision, every tool call with timing and errors, the full sequence (user input,
+  reasoning, tool call, output, with token usage), compactions and subagents. Switched with `DEFROST_MONITOR=on|off`
+  in the project's `.env`. Off costs nothing (the switch is checked in the shell); the hook always exits 0 and is
+  silent. Deleting `defrost_ai/monitor.py` leaves everything else working. `defrost monitor report [--sequence]` and
+  `defrost monitor status` read the logs. See docs/MONITORING.md.
 - **Retrieval finds claims deep in long sections.** A third of doc sections are longer than the reranker's
   384-token window, so a claim near the end of one was invisible to it. Long sections are now scored by their best
   of two overlapping windows (128 tokens overlap), the rerank pool is 30 per retriever (was 20), and the context pack

@@ -20,6 +20,15 @@ except Exception:                                      # noqa: BLE001  (a broken
     pass
 
 
+def monitor_event(event: str, session: str | None = None, root=None, **fields) -> None:
+    """Log to the optional monitoring mode (defrost_ai/monitor.py). No-op when it is off or the module was removed."""
+    try:
+        from defrost_ai import monitor
+    except ImportError:
+        return
+    monitor.emit(event, session, root, **fields)
+
+
 def build_id() -> str:
     """Version + hash of the package sources: a running service with a different build id is restarted by clients."""
     import hashlib

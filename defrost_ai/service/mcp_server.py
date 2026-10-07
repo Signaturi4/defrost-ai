@@ -45,10 +45,23 @@ def _guarded(fn):
     def wrapper(*args, **kwargs):
         if install_replaced():
             return REPLACED.format(where=f"{INSTALL_DIR} no longer exists")
+        import time
+        t0, out, err = time.time(), None, None
         try:
-            return fn(*args, **kwargs)
+            out = fn(*args, **kwargs)
+            return out
         except ImportError as e:
-            return REPLACED.format(where=f"import failed: {e}")
+            err, out = f"ImportError: {e}", REPLACED.format(where=f"import failed: {e}")
+            return out
+        except Exception as e:                                         # noqa: BLE001  (logged, then raised as before)
+            err = f"{type(e).__name__}: {e}"
+            raise
+        finally:
+            text = out if isinstance(out, str) else ""
+            defrost_ai.monitor_event("mcp_tool", None, None, tool=fn.__name__, ms=round((time.time() - t0) * 1000),
+                                     ok=err is None and not text.startswith(("search failed", "build of")),
+                                     error=err, args={k: str(v)[:200] for k, v in kwargs.items()},
+                                     result_chars=len(text), result_head=text[:200])
     return wrapper
 
 
