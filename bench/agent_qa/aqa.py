@@ -24,6 +24,7 @@ import os
 import random
 import re
 import shutil
+import signal
 import statistics as st
 import subprocess
 import sys
@@ -159,7 +160,18 @@ def run_one(cfg, arm, q, rep):
         cmd += ["--disable-slash-commands"]
     cmd += ["--allowedTools", allowed, "--disallowedTools", denied]
     t0 = time.time()
-    p = subprocess.run(cmd, cwd=paths(cfg)[arm], capture_output=True, text=True, timeout=900, env=arm_env(cfg, arm))
+    # Own process group: on timeout the whole group (claude, its MCP server, hooks) is killed, so a child holding the
+    # output pipe cannot keep the batch waiting past the limit.
+    proc = subprocess.Popen(cmd, cwd=paths(cfg)[arm], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                            env=arm_env(cfg, arm), stdin=subprocess.DEVNULL, start_new_session=True)
+    try:
+        out, err = proc.communicate(timeout=900)
+    except subprocess.TimeoutExpired:                   # a hung session: record it and go on; a rerun retries it
+        os.killpg(proc.pid, signal.SIGKILL) if hasattr(os, "killpg") else proc.kill()
+        proc.communicate()
+        log.with_suffix(".stderr").write_text("timeout after 900 s\n")
+        return time.time() - t0
+    p = subprocess.CompletedProcess(cmd, proc.returncode, out, err)
     log.write_text(p.stdout)
     if p.returncode:
         log.with_suffix(".stderr").write_text(p.stderr)
