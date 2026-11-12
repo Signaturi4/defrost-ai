@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.0 (2026-11-12)
 
 - **No private submodule in the public repository:** `skills/knowledge_lifecycle_skill/` pointed to a private
   repository, so public clones got an empty folder. It is removed; nothing in the package or the tests used it. The
