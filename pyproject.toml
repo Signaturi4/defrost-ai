@@ -1,10 +1,25 @@
 [project]
 name = "defrost-ai"   # project: defrost-ai
-version = "1.2.1"
+version = "1.3.0"
 description = "Hybrid-RAG knowledge memory for codebases and document collections: BM25 + Defrost-Ret dense retrieval + Defrost-Rerank, with doc-to-code links from graphify's AST graph."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE", "NOTICE", "third_party/letta-code/LICENSE"]
+authors = [{ name = "Artem Zelenskii" }]
+keywords = ["rag", "retrieval", "mcp", "claude-code", "documentation", "code-search", "bm25", "reranker", "local-ai"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Documentation",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Text Processing :: Indexing",
+]
 dependencies = [
     "numpy>=1.26",
     "torch>=2.6",
@@ -13,6 +28,13 @@ dependencies = [
     "safetensors>=0.4.3",
     "mcp>=1.2,<2",                    # `defrost mcp`: MCP server for Claude Code / Desktop / Cursor
 ]
+
+[project.urls]
+Homepage = "https://github.com/Signaturi4/defrost-ai"
+Documentation = "https://github.com/Signaturi4/defrost-ai#readme"
+Source = "https://github.com/Signaturi4/defrost-ai"
+Issues = "https://github.com/Signaturi4/defrost-ai/issues"
+Changelog = "https://github.com/Signaturi4/defrost-ai/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 code = ["graphifyy==0.4.32"]          # code graph (tree-sitter AST); without it the memory is text-only
@@ -27,7 +49,7 @@ defrost = "defrost_ai.cli:main"
 kev-memory = "defrost_ai.cli:main"   # old name, kept for installed hooks until 1.3
 
 [build-system]
-requires = ["setuptools>=69"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]

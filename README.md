@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/brand/logo-256.png" width="112" height="112" alt="defrost-ai icon: a snowflake whose lower arms turn into code braces">
+  <img src="https://raw.githubusercontent.com/Signaturi4/defrost-ai/main/docs/brand/logo-256.png" width="112" height="112" alt="defrost-ai icon: a snowflake whose lower arms turn into code braces">
 </p>
 
 <h1 align="center">defrost-ai</h1>
@@ -10,22 +10,14 @@
 </p>
 
 <p align="center">
-  <sub><b>What it is:</b> a local hybrid retrieval (RAG) index over a repository's documentation and source code,
-  served to Claude Code and other MCP clients. Docs (<code>.md</code> <code>.mdx</code> <code>.rst</code>
-  <code>.adoc</code>) are split into heading sections and ranked by SQLite FTS5 BM25 and Defrost-Ret-B dense vectors,
-  fused by reciprocal-rank fusion. When the two disagree on the top hit, Defrost-Rerank, a cross-encoder, reorders
-  the top 40. Both models are LoRA adapters on Qwen2.5-0.5B and run on your machine. Each section is linked to the
-  code symbols and config files it names, using graphify's tree-sitter AST graph, so every hit returns
-  <code>path:Lstart-end</code> plus the code to check it against. Git hooks re-embed only the changed sections
-  after each commit or merge to main. Next to the index, <code>defrost-memory/</code> is a separate git repo in the
-  project that holds session handoff notes and your doc/code conflict decisions: one commit per write, and a
-  pre-commit hook enforces the layout (frontmatter, <code>MEMORY.md</code> indexes, depth and size limits).
-  Interfaces: MCP (stdio), CLI, HTTP, Python.</sub>
+  <code>pip install defrost-ai</code>
 </p>
 
 <p align="center">
   <a href="https://github.com/Signaturi4/defrost-ai/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Signaturi4/defrost-ai/ci.yml?branch=main&style=flat-square&label=ci&labelColor=0B0F14"></a>
   <a href="https://github.com/Signaturi4/defrost-ai/releases"><img alt="Release" src="https://img.shields.io/github/v/release/Signaturi4/defrost-ai?style=flat-square&labelColor=0B0F14&color=2F6FEB"></a>
+  <a href="https://pypi.org/project/defrost-ai/"><img alt="PyPI" src="https://img.shields.io/pypi/v/defrost-ai?style=flat-square&labelColor=0B0F14&color=2F6FEB"></a>
+  <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-2F6FEB?style=flat-square&labelColor=0B0F14">
   <a href="#license"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-2F6FEB?style=flat-square&labelColor=0B0F14"></a>
   <img alt="Runs offline" src="https://img.shields.io/badge/runs-offline-2F6FEB?style=flat-square&labelColor=0B0F14">
   <img alt="MCP server" src="https://img.shields.io/badge/MCP-server-F5A524?style=flat-square&labelColor=0B0F14">
@@ -61,6 +53,25 @@ log = structlog.get_logger().bind(x=42) and call log.info("some_event", y=23), i
 | **Finds the answer, not the keyword** | The answering doc section is in context for **94%** of questions, against 6% for stock graphify ([E2E](docs/E2E_GRAPHIFY.md)) |
 | **Free and private** | Builds and searches on your laptop: no API calls, no tokens, no data leaving the machine |
 | **Stays fresh by itself** | Refreshes on merge to main or on a schedule, and re-embeds only what changed |
+
+**What it's for:** giving Claude Code (or any MCP client) the right part of your own docs, with file and line
+numbers, instead of letting it grep and guess. It indexes Markdown, MDX, reStructuredText and AsciiDoc into heading
+sections, ranks them with BM25 plus its own small dense retriever and reranker (LoRA adapters on Qwen2.5-0.5B, run
+locally), and links each section to the code it names. Details: [How it works](#how-it-works).
+
+### 30-second quickstart
+
+```sh
+pip install "defrost-ai[code]"       # Python 3.11+; or: uv tool install "defrost-ai[code]"
+defrost download-weights             # about 140 MB, sha256-checked, once per machine
+cd /path/to/your/repo
+defrost setup --yes --profile standard --doc-trust low
+defrost search "how does <something> work?"
+defrost claude install --user        # optional: MCP server + slash commands in Claude Code
+```
+
+macOS and Linux; Windows is not supported yet. On Apple Silicon add the `mac` extra (`defrost-ai[code,mac]`) for
+the MLX backend. The one-line installer below does all of this for you.
 
 > [!NOTE]
 > Coming from `kev-memory` or defrost-ai 1.1? Old commands, MCP tool names, `KEV_MEMORY_*` variables and installed
@@ -350,12 +361,12 @@ checks every doc hit against the code, asks you when the two disagree, and keeps
 your project. Mermaid sources and the rules behind each step: [docs/AGENT_LOOP.md](docs/AGENT_LOOP.md).
 
 <p align="center">
-  <a href="docs/img/agent_loop-1.svg"><img src="docs/img/agent_loop-1.svg" width="100%" alt="Architecture: the agent calls the defrost, graphify and file tools; the defrost service runs BM25 and Defrost-Ret-B, then Defrost-Rerank when they disagree; it reads the project memory in ~/.defrost-ai and the context repo in defrost-memory/; hooks and worktree workers keep both fresh"></a>
+  <a href="docs/img/agent_loop-1.svg"><img src="https://raw.githubusercontent.com/Signaturi4/defrost-ai/main/docs/img/agent_loop-1.svg" width="100%" alt="Architecture: the agent calls the defrost, graphify and file tools; the defrost service runs BM25 and Defrost-Ret-B, then Defrost-Rerank when they disagree; it reads the project memory in ~/.defrost-ai and the context repo in defrost-memory/; hooks and worktree workers keep both fresh"></a>
   <br><sub>Where the system sits</sub>
 </p>
 
 <p align="center">
-  <a href="docs/img/agent_loop-2.svg"><img src="docs/img/agent_loop-2.svg" width="78%" alt="The loop: brief after /clear, pick defrost search, graphify or grep by question kind, verify hits against code according to doc trust, ask the user on a doc/code conflict and record the decision, update docs after code changes, hand off before /clear or compaction"></a>
+  <a href="docs/img/agent_loop-2.svg"><img src="https://raw.githubusercontent.com/Signaturi4/defrost-ai/main/docs/img/agent_loop-2.svg" width="78%" alt="The loop: brief after /clear, pick defrost search, graphify or grep by question kind, verify hits against code according to doc trust, ask the user on a doc/code conflict and record the decision, update docs after code changes, hand off before /clear or compaction"></a>
   <br><sub>The loop, step by step</sub>
 </p>
 
@@ -377,7 +388,7 @@ Protocol: [docs/EVALUATION.md](docs/EVALUATION.md). Everything that worked and d
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/img/chart-e2e-dark.svg">
-  <img src="docs/img/chart-e2e-light.svg" width="100%" alt="End to end on uvicorn, cattrs and structlog, 100 questions. Answering doc section in context: stock graphify 0.06, graphify plus defrost-ai 0.94. RAGAS answer accuracy 0.22 vs 0.90, context relevance 0.52 vs 0.97, groundedness 0.28 vs 0.97.">
+  <img src="https://raw.githubusercontent.com/Signaturi4/defrost-ai/main/docs/img/chart-e2e-light.svg" width="100%" alt="End to end on uvicorn, cattrs and structlog, 100 questions. Answering doc section in context: stock graphify 0.06, graphify plus defrost-ai 0.94. RAGAS answer accuracy 0.22 vs 0.90, context relevance 0.52 vs 0.97, groundedness 0.28 vs 0.97.">
 </picture>
 
 Same comparison, agent and cost ([docs/E2E_GRAPHIFY.md](docs/E2E_GRAPHIFY.md)):
@@ -390,7 +401,7 @@ Same comparison, agent and cost ([docs/E2E_GRAPHIFY.md](docs/E2E_GRAPHIFY.md)):
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/img/chart-locked-test-dark.svg">
-  <img src="docs/img/chart-locked-test-light.svg" width="100%" alt="Locked test nDCG@10. Held-out OSS repos, 106 questions: BM25 0.703, defrost-ai accurate 0.840. Private product repos, 69 questions, in-domain: BM25 0.684, accurate 0.835.">
+  <img src="https://raw.githubusercontent.com/Signaturi4/defrost-ai/main/docs/img/chart-locked-test-light.svg" width="100%" alt="Locked test nDCG@10. Held-out OSS repos, 106 questions: BM25 0.703, defrost-ai accurate 0.840. Private product repos, 69 questions, in-domain: BM25 0.684, accurate 0.835.">
 </picture>
 
 A 13-gram gate removed generated training questions that overlap an eval suite. It did not cover the unsupervised
@@ -465,14 +476,9 @@ What is different from the parts it is built on:
 
 The research behind the rules: [docs/WRITING_FOR_EXTRACTION.md](docs/WRITING_FOR_EXTRACTION.md).
 
-The same rules ship as a standalone agent skill that needs no defrost install:
-[knowledge_lifecycle_skill](https://github.com/Signaturi4/knowledge_lifecycle_skill), included here as the git
-submodule `skills/knowledge_lifecycle_skill/` (clone with `--recurse-submodules`, or run
-`git submodule update --init`). Copy its `extraction-ready-docs/` folder to `~/.claude/skills/` and Claude applies
-the rules whenever it writes docs. `python skills/knowledge_lifecycle_skill/extraction-ready-docs/scripts/install.py
-<project>` sets a project up in any repository. Add `--defrost` in a project indexed by defrost: the installer then
-also copies the linters and writes its block between the same markers as `defrost setup`. To move to the skill's
-latest version: `git submodule update --remote skills/knowledge_lifecycle_skill`, then commit.
+The same rules are also kept as a standalone agent skill (`extraction-ready-docs`) that needs no defrost install.
+It is not published yet; until it is, the rules, templates, linter and Facts extractor above, shipped inside the
+package, are the supported way to use them.
 
 ## Weights
 
