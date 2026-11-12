@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **No private submodule in the public repository:** `skills/knowledge_lifecycle_skill/` pointed to a private
+  repository, so public clones got an empty folder. It is removed; nothing in the package or the tests used it. The
+  doc rules still ship inside the package (`defrost_ai/assets/doc_rules/`).
 - **Monitoring mode (optional):** `defrost setup . --monitor` adds Claude Code hooks that log each session to
   `<DEFROST_HOME>/monitor/<project>/<session>.jsonl`. They record grep calls, memory searches and updates (by
   command), the prompt hook's decision, every tool call with timing and errors, the full sequence (user input,
