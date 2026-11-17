@@ -1,0 +1,140 @@
+{
+  "theme": {
+    "product": "defrost-ai",
+    "brand": "#2F6FEB",
+    "font": "\"Geist\"",
+    "wash": "radial-gradient(60% 55% at 0% 0%,rgb(47 111 235/.22),transparent 70%),radial-gradient(50% 45% at 100% 6%,rgb(245 165 36/.16),transparent 70%),radial-gradient(60% 60% at 92% 100%,rgb(47 111 235/.16),transparent 70%),radial-gradient(50% 50% at 6% 94%,rgb(140 180 245/.22),transparent 70%),#F4F6F8"
+  },
+  "slides": [
+    {
+      "type": "cover",
+      "tagline": "Comparison · November 2026",
+      "eyebrow": "defrost-ai vs Hindsight",
+      "title": ["Two kinds of", "*agent memory*"],
+      "subtitle": "defrost-ai lets agents read your docs. Hindsight lets agents learn from what happened. Different questions, different tools.",
+      "panel": {
+        "label": "What each one remembers",
+        "rows": [
+          {"title": "Docs and code", "note": "Sections with path and lines, linked code", "tag": "defrost-ai", "new": true},
+          {"title": "Decisions and notes", "note": "Doc and code conflicts, handoffs", "tag": "defrost-ai", "new": true},
+          {"title": "Facts and experiences", "note": "Pulled from chats by an LLM", "tag": "Hindsight"},
+          {"title": "Beliefs and mental models", "note": "Consolidated, rewritten over time", "tag": "Hindsight"},
+          {"title": "Both in one agent", "note": "Docs from defrost, sessions from Hindsight", "tag": "Option", "later": true}
+        ],
+        "later_label": "Used together"
+      }
+    },
+    {
+      "type": "cards",
+      "section": "At a glance",
+      "heading": "Two projects, *one licence*",
+      "cards": [
+        {"value": "94%", "title": "defrost-ai", "bullets": ["Answering doc section found", "Stock graphify: 6%"]},
+        {"value": "94.6%", "title": "Hindsight", "bullets": ["LongMemEval, self-reported", "LoCoMo 92.0%"]},
+        {"value": "$0", "title": "defrost-ai build", "bullets": ["Local 0.5B models", "No API calls"]}
+      ],
+      "strip": {"label": "Read 2026-11-17", "items": ["Both MIT", "Hindsight 61.5k stars, a46baef", "defrost-ai 1.3.0, be65fd2"], "source": "READMEs"}
+    },
+    {
+      "type": "compare",
+      "section": "The question",
+      "heading": "They answer *different questions*",
+      "lead": "Benchmarks are not comparable: each measures its own job.",
+      "before": {"icon": "H", "title": "Hindsight: what happened?", "bullets": ["User and agent history", "Who said what, and when", "Beliefs that change with evidence", "Benchmarks on long chats"]},
+      "after": {"icon": "d", "title": "defrost-ai: how does it work?", "bullets": ["How and why in your docs", "Cited path and line numbers", "Checked against the code", "Benchmarks on doc retrieval"]}
+    },
+    {
+      "type": "flow",
+      "section": "defrost-ai",
+      "heading": "defrost-ai: *read, rank, cite*",
+      "steps": [
+        {"title": "Docs", "note": "Markdown, MDX, RST, AsciiDoc"},
+        {"title": "Sections", "note": "Split by heading, linked to code", "automatic": true},
+        {"title": "BM25 + dense", "note": "Both run locally", "automatic": true},
+        {"title": "Rerank", "note": "Only when they disagree", "automatic": true},
+        {"title": "Cited answer", "note": "path:Lstart-end, verify in code"}
+      ],
+      "notes": [
+        {"label": "Write path", "text": "No LLM. Re-embeds only changed sections on commit or merge."},
+        {"label": "Runs on", "text": "Laptop or server, SQLite, 141 MB of adapters, offline."},
+        {"label": "Speed", "text": "Reranked search about 1.7 s on Apple M5; hybrid about 45 ms."}
+      ]
+    },
+    {
+      "type": "flow",
+      "section": "Hindsight",
+      "heading": "Hindsight: *retain, recall, reflect*",
+      "steps": [
+        {"title": "Retain", "note": "Text in, per memory bank"},
+        {"title": "Extract", "note": "LLM pulls facts, entities, time", "automatic": true},
+        {"title": "Consolidate", "note": "Observations with evidence", "automatic": true},
+        {"title": "Recall", "note": "Vector, BM25, graph, time; rerank", "automatic": true},
+        {"title": "Reflect", "note": "LLM reasons over memories"}
+      ],
+      "notes": [
+        {"label": "Write path", "text": "An LLM call per retain; 25+ providers, local ones too."},
+        {"label": "Runs on", "text": "Server with Postgres and pgvector, Docker, Helm or Cloud."},
+        {"label": "Extras", "text": "Mental models, pages, MCP per bank, secret and PII scan."}
+      ]
+    },
+    {
+      "type": "table",
+      "section": "Side by side",
+      "heading": "Side by *side*",
+      "headers": ["", "defrost-ai", "Hindsight"],
+      "widths": ["20%", "40%", "40%"],
+      "rows": [
+        ["Stores", "Doc sections, code links, decisions", "Facts, experiences, observations, models"],
+        ["Write cost", "None: local models", "LLM tokens on every retain"],
+        ["Search", "BM25 + dense, rerank on disagreement", "4 retrievers, fusion, cross-encoder"],
+        ["Infra", "CLI, SQLite, no server", "API server, Postgres, optional Cloud"],
+        ["Claude Code", "MCP, hooks, slash commands, setup wizard", "MCP per bank, auto-ingest of git and sessions"],
+        ["Privacy", "Nothing leaves the machine", "Depends on the chosen LLM provider"],
+        ["Proof", "Held-out repos, CIs, RAGAS", "LongMemEval, LoCoMo, reproduced by VT"]
+      ],
+      "note": "Sources: both READMEs and defrost docs/RESULTS.md, read 2026-11-17. Hindsight scores are its own report."
+    },
+    {
+      "type": "cards",
+      "section": "Fit",
+      "heading": "Where each one *wins*",
+      "cards": [
+        {"icon": "d", "title": "Pick defrost-ai", "bullets": ["Large or many-repo docs", "Code changes daily", "Client code stays local", "No token budget"]},
+        {"icon": "H", "title": "Pick Hindsight", "bullets": ["Assistants with users", "Long chat history", "Learning from outcomes", "Shared team server"]},
+        {"icon": "+", "title": "Use both", "bullets": ["defrost for how and why", "Hindsight for who and when", "Two MCP servers", "No overlap in data"]}
+      ]
+    },
+    {
+      "type": "blocks",
+      "section": "Ideas",
+      "heading": "What defrost-ai can *borrow*",
+      "blocks": [
+        {"title": "Evidence counts", "bullets": ["Keep quotes per decision", "Strengthen, not overwrite"]},
+        {"title": "Standing answers", "bullets": ["Pages for top questions", "Rewritten after merges"]},
+        {"title": "Secret scan on write", "bullets": ["Check remember() input", "Redact or block"]},
+        {"title": "Session ingest", "bullets": ["Notes from past sessions", "Opt in, local only"]},
+        {"title": "Lifecycle events", "bullets": ["Webhook on refresh", "Metrics for monitoring"]},
+        {"title": "One public leaderboard", "bullets": ["Live results page", "Same protocol each release"]}
+      ]
+    },
+    {
+      "type": "statement",
+      "section": "Verdict",
+      "statement": ["Not rivals.", "Two layers of", "one memory."],
+      "caption": "defrost-ai answers from what the team wrote down. Hindsight remembers what the agent lived through.",
+      "heading": "The *verdict*",
+      "side": {"title": "Keep defrost-ai's edge", "bullets": ["Free, local, cited", "Doc and code checks", "Measured on held-out repos", "Say grep wins on small repos"]}
+    },
+    {
+      "type": "cards",
+      "section": "Next steps",
+      "heading": "Next *steps*",
+      "cards": [
+        {"icon": "1", "title": "Decide", "bullets": ["Borrow which ideas", "Order of work"]},
+        {"icon": "2", "title": "Try", "bullets": ["Hindsight beside defrost", "One repo, two weeks"]},
+        {"icon": "3", "title": "Measure", "bullets": ["Same questions", "Cost and hit rate"]},
+        {"icon": "4", "title": "Later", "bullets": ["Shared team memory", "Not planned yet"]}
+      ]
+    }
+  ]
+}
